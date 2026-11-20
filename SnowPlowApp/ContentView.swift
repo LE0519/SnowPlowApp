@@ -2,6 +2,16 @@ import SwiftUI
 
 struct ContentView: View {
     var body: some View {
-        CustomerListView()
+        TabView {
+            CustomerListView()
+                .tabItem {
+                    Label("Customers", systemImage: "person.2")
+                }
+
+            PropertyMapView()
+                .tabItem {
+                    Label("Map", systemImage: "map")
+                }
+        }
     }
 }
