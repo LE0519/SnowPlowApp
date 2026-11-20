@@ -7,6 +7,6 @@ struct SnowPlowMain: App {
         WindowGroup {
             ContentView()
         }
-        .modelContainer(for: [Customer.self, Property.self])
+        .modelContainer(for: [Customer.self, Property.self, Storm.self, ServiceRecord.self])
     }
 }
