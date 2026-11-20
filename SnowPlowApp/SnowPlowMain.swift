@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 @main
 struct SnowPlowMain: App {
@@ -6,5 +7,6 @@ struct SnowPlowMain: App {
         WindowGroup {
             ContentView()
         }
+        .modelContainer(for: [Customer.self, Property.self])
     }
 }
