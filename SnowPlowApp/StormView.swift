@@ -215,5 +215,3 @@ struct StormPropertyRow: View {
         }
     }
 }
-    }
-}
