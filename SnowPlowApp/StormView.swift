@@ -1,8 +1,10 @@
 import SwiftUI
 import SwiftData
+import UIKit
 
 struct StormView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(LocationService.self) private var locationService
     @Query(sort: \Storm.startedAt, order: .reverse) private var storms: [Storm]
     @Query private var properties: [Property]
     @AppStorage("driverName") private var driverName = "Driver"
@@ -35,7 +37,7 @@ struct StormView: View {
                                 .font(.headline)
                         }
                     } footer: {
-                        Text("Start a storm when you begin plowing. Completed properties are tracked for each storm.")
+                        Text("Start a storm when you begin plowing. GPS watching and completed properties are tracked for each storm.")
                     }
                 }
 
@@ -77,6 +79,18 @@ struct StormView: View {
             }
         }
 
+        Section("GPS") {
+            Text(locationService.statusText)
+                .font(.subheadline)
+            if locationService.isDenied {
+                Button("Open Settings") {
+                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                        UIApplication.shared.open(url)
+                    }
+                }
+            }
+        }
+
         Section("Properties") {
             if properties.isEmpty {
                 Text("Add customers and properties first.")
@@ -103,10 +117,14 @@ struct StormView: View {
     private func startStorm() {
         let name = "Storm " + Date().formatted(date: .abbreviated, time: .omitted)
         modelContext.insert(Storm(name: name))
+        try? modelContext.save()
+        locationService.start()
     }
 
     private func endStorm(_ storm: Storm) {
         storm.endedAt = Date()
+        try? modelContext.save()
+        locationService.stop()
     }
 
     private func deletePastStorms(at offsets: IndexSet) {
@@ -187,11 +205,15 @@ struct StormPropertyRow: View {
         modelContext.insert(record)
         record.property = property
         record.storm = storm
+        try? modelContext.save()
     }
 
     private func undoLatest() {
         if let latest = records.first {
             modelContext.delete(latest)
+            try? modelContext.save()
         }
+    }
+}
     }
 }
