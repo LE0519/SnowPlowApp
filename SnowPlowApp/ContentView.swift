@@ -1,6 +1,9 @@
 import SwiftUI
 
 struct ContentView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(LocationService.self) private var locationService
+
     var body: some View {
         TabView {
             StormView()
@@ -22,6 +25,9 @@ struct ContentView: View {
                 .tabItem {
                     Label("Settings", systemImage: "gearshape")
                 }
+        }
+        .onAppear {
+            locationService.configure(context: modelContext)
         }
     }
 }
