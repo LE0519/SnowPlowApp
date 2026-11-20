@@ -9,6 +9,9 @@ final class Property {
     var radiusMeters: Double
     var customer: Customer?
 
+    @Relationship(deleteRule: .cascade, inverse: \ServiceRecord.property)
+    var records: [ServiceRecord] = []
+
     init(address: String = "",
          latitude: Double? = nil,
          longitude: Double? = nil,
