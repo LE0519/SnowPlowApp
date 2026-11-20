@@ -7,23 +7,32 @@ struct MapPin: Identifiable {
     let name: String
     let coordinate: CLLocationCoordinate2D
     let radius: Double
+    let isDone: Bool
 }
 
 struct PropertyMapView: View {
     @Query private var properties: [Property]
+    @Query private var storms: [Storm]
     @State private var position: MapCameraPosition = .automatic
 
+    private var activeStorm: Storm? {
+        storms.first { $0.isActive }
+    }
+
     private var pins: [MapPin] {
-        properties.compactMap { property in
+        let storm = activeStorm
+        return properties.compactMap { property in
             guard let lat = property.latitude, let lon = property.longitude else {
                 return nil
             }
             let name = property.customer?.name ?? ""
+            let done = storm?.records.contains { $0.property === property } ?? false
             return MapPin(
                 id: property.persistentModelID,
                 name: name.isEmpty ? "(No name)" : name,
                 coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon),
-                radius: property.radiusMeters
+                radius: property.radiusMeters,
+                isDone: done
             )
         }
     }
@@ -33,9 +42,9 @@ struct PropertyMapView: View {
             Map(position: $position) {
                 ForEach(pins) { pin in
                     Annotation(pin.name, coordinate: pin.coordinate) {
-                        Image(systemName: "mappin.circle.fill")
+                        Image(systemName: pin.isDone ? "checkmark.circle.fill" : "mappin.circle.fill")
                             .font(.title)
-                            .foregroundStyle(.red)
+                            .foregroundStyle(pin.isDone ? Color.green : Color.red)
                     }
                     MapCircle(center: pin.coordinate, radius: pin.radius)
                         .foregroundStyle(Color.blue.opacity(0.25))
