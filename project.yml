@@ -9,12 +9,22 @@ targets:
     platform: iOS
     sources:
       - SnowPlowApp
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: SnowPlow
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UIBackgroundModes:
+          - location
+        NSLocationWhenInUseUsageDescription: "SnowPlow uses your location to notice when you arrive at a customer's property and mark the job done. Your location stays on this phone."
+        NSLocationAlwaysAndWhenInUseUsageDescription: "SnowPlow uses your location, even when the app is in the background or the phone is locked, to notice when you arrive at a customer's property and mark the job done. Your location stays on this phone."
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.snowplowapp.app
-        GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        INFOPLIST_KEY_CFBundleDisplayName: SnowPlow
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.0"
