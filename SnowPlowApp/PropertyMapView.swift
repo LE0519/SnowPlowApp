@@ -11,6 +11,7 @@ struct MapPin: Identifiable {
 }
 
 struct PropertyMapView: View {
+    @Environment(LocationService.self) private var locationService
     @Query private var properties: [Property]
     @Query private var storms: [Storm]
     @State private var position: MapCameraPosition = .automatic
@@ -40,6 +41,8 @@ struct PropertyMapView: View {
     var body: some View {
         NavigationStack {
             Map(position: $position) {
+                UserAnnotation()
+
                 ForEach(pins) { pin in
                     Annotation(pin.name, coordinate: pin.coordinate) {
                         Image(systemName: pin.isDone ? "checkmark.circle.fill" : "mappin.circle.fill")
@@ -49,6 +52,10 @@ struct PropertyMapView: View {
                     MapCircle(center: pin.coordinate, radius: pin.radius)
                         .foregroundStyle(Color.blue.opacity(0.25))
                 }
+            }
+            .mapControls {
+                MapUserLocationButton()
+                MapCompass()
             }
             .overlay {
                 if pins.isEmpty {
@@ -62,6 +69,9 @@ struct PropertyMapView: View {
             }
             .navigationTitle("Map")
             .navigationBarTitleDisplayMode(.inline)
+            .onAppear {
+                locationService.requestPermissionIfNeeded()
+            }
         }
     }
 }
