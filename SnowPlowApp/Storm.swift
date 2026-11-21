@@ -3,6 +3,7 @@ import SwiftData
 
 @Model
 final class Storm {
+    var uuid: UUID?
     var name: String
     var startedAt: Date
     var endedAt: Date?
@@ -15,6 +16,7 @@ final class Storm {
     }
 
     init(name: String) {
+        self.uuid = UUID()
         self.name = name
         self.startedAt = Date()
     }
