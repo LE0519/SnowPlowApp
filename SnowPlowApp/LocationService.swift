@@ -16,9 +16,12 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
     private var context: ModelContext?
     private var lastLocation: CLLocation?
+    private var lastRegionRefresh: CLLocation?
+    private var watchedCount = 0
     private var enteredAt: [PersistentIdentifier: Date] = [:]
     private var timer: Timer?
     private var askedForAlways = false
+    private let maxRegions = 20
 
     override init() {
         super.init()
@@ -30,16 +33,23 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
 
     func configure(context: ModelContext) {
         self.context = context
-        // If the app was reopened during a storm, pick tracking back up.
+        // If the app was reopened (or restarted by iOS) during a storm, pick tracking back up.
         if !isTracking, activeStorm() != nil {
             start()
+        }
+    }
+
+    /// Lets the map show your location dot even when no storm is running.
+    func requestPermissionIfNeeded() {
+        if manager.authorizationStatus == .notDetermined {
+            manager.requestWhenInUseAuthorization()
         }
     }
 
     func start() {
         guard !isTracking else { return }
         isTracking = true
-        statusText = "Starting GPS..."
+        setStatus("Starting GPS...")
 
         switch manager.authorizationStatus {
         case .notDetermined:
@@ -57,6 +67,8 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
     func stop() {
         isTracking = false
         manager.stopUpdatingLocation()
+        manager.stopMonitoringSignificantLocationChanges()
+        stopRegions()
         manager.allowsBackgroundLocationUpdates = false
         timer?.invalidate()
         timer = nil
@@ -84,17 +96,80 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         if modes.contains("location") {
             manager.allowsBackgroundLocationUpdates = true
             manager.showsBackgroundLocationIndicator = true
-            statusText = "Watching for arrivals..."
+            setStatus("Watching for arrivals...")
         } else {
-            statusText = "Watching for arrivals (foreground only: background mode missing from this build)."
+            setStatus("Watching for arrivals (foreground only: background mode missing from this build).")
         }
 
         manager.startUpdatingLocation()
+
+        // These two let iOS restart the app if it gets closed during a storm.
+        if CLLocationManager.significantLocationChangeMonitoringAvailable() {
+            manager.startMonitoringSignificantLocationChanges()
+        }
+        refreshRegions(around: manager.location)
 
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
             self?.evaluate()
         }
+    }
+
+    // MARK: - Restart watching (the 20 closest unfinished properties)
+
+    private func refreshRegions(around location: CLLocation?) {
+        guard isTracking, let context = context else { return }
+        guard CLLocationManager.isMonitoringAvailable(for: CLCircularRegion.self) else { return }
+        guard let storm = activeStorm() else {
+            stopRegions()
+            return
+        }
+
+        let properties = (try? context.fetch(FetchDescriptor<Property>())) ?? []
+        var candidates: [(id: String, center: CLLocationCoordinate2D, radius: Double, distance: Double)] = []
+        for property in properties {
+            guard let lat = property.latitude, let lon = property.longitude,
+                  let uuid = property.uuid else { continue }
+            // Properties already done in this storm do not need to wake the app.
+            if storm.records.contains(where: { $0.property === property }) { continue }
+            let distance = location?.distance(from: CLLocation(latitude: lat, longitude: lon)) ?? 0
+            candidates.append((
+                id: uuid.uuidString,
+                center: CLLocationCoordinate2D(latitude: lat, longitude: lon),
+                radius: property.radiusMeters,
+                distance: distance
+            ))
+        }
+        candidates.sort { $0.distance < $1.distance }
+        let chosen = Array(candidates.prefix(maxRegions))
+        let chosenIDs = Set(chosen.map { $0.id })
+
+        for region in manager.monitoredRegions where !chosenIDs.contains(region.identifier) {
+            manager.stopMonitoring(for: region)
+        }
+
+        let alreadyWatching = Set(manager.monitoredRegions.map { $0.identifier })
+        let largest = manager.maximumRegionMonitoringDistance
+        let cap = largest > 0 ? largest : 5000
+        for item in chosen where !alreadyWatching.contains(item.id) {
+            // iOS is unreliable with very small regions, so use at least 100 m.
+            let radius = min(max(item.radius, 100), cap)
+            let region = CLCircularRegion(center: item.center, radius: radius, identifier: item.id)
+            region.notifyOnEntry = true
+            region.notifyOnExit = false
+            manager.startMonitoring(for: region)
+        }
+
+        watchedCount = chosen.count
+        lastRegionRefresh = location
+    }
+
+    private func stopRegions() {
+        for region in manager.monitoredRegions {
+            manager.stopMonitoring(for: region)
+        }
+        watchedCount = 0
+        lastRegionRefresh = nil
     }
 
     // MARK: - Location delegate
@@ -118,7 +193,34 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         lastLocation = locations.last
+
+        // Swap which 20 properties iOS watches once we have moved a good distance.
+        if let current = lastLocation {
+            if let previous = lastRegionRefresh {
+                if current.distance(from: previous) > 1000 {
+                    refreshRegions(around: current)
+                }
+            } else {
+                refreshRegions(around: current)
+            }
+        }
         evaluate()
+    }
+
+    func locationManager(_ manager: CLLocationManager, didEnterRegion region: CLRegion) {
+        // iOS woke the app because we drove into a property's area. Make sure full GPS watching is on,
+        // and start the arrival timer from now.
+        if !isTracking, activeStorm() != nil {
+            start()
+        }
+        if let context = context, let uuid = UUID(uuidString: region.identifier) {
+            let properties = (try? context.fetch(FetchDescriptor<Property>())) ?? []
+            if let property = properties.first(where: { $0.uuid == uuid }),
+               enteredAt[property.persistentModelID] == nil {
+                enteredAt[property.persistentModelID] = Date()
+            }
+        }
+        manager.startUpdatingLocation()
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
@@ -147,19 +249,31 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         return String(format: "%d:%02d", total / 60, total % 60)
     }
 
+    /// Sets the status line and adds helpful notes about restart watching.
+    private func setStatus(_ text: String) {
+        var full = text
+        if isTracking && watchedCount > 0 {
+            full += " Restart watch: \(watchedCount)."
+        }
+        if isTracking && authorization == .authorizedWhenInUse {
+            full += " Tip: set Location to Always in iPhone Settings so the app can restart itself."
+        }
+        statusText = full
+    }
+
     private func evaluate() {
         guard isTracking, let context = context else { return }
 
         guard let storm = activeStorm() else {
-            statusText = "No active storm."
+            setStatus("No active storm.")
             return
         }
         guard let location = lastLocation else {
-            statusText = "Waiting for a GPS fix..."
+            setStatus("Waiting for a GPS fix...")
             return
         }
         guard location.horizontalAccuracy >= 0, location.horizontalAccuracy <= 50 else {
-            statusText = "GPS signal is weak. Waiting for a better fix..."
+            setStatus("GPS signal is weak. Waiting for a better fix...")
             return
         }
 
@@ -182,7 +296,7 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
 
         guard let property = best else {
             enteredAt = [:]
-            statusText = "Watching for arrivals. Not at a saved property."
+            setStatus("Watching for arrivals. Not at a saved property.")
             return
         }
 
@@ -197,7 +311,7 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
 
         // Never auto-complete the same property twice in one storm.
         if storm.records.contains(where: { $0.property === property }) {
-            statusText = "At \(name): already marked done."
+            setStatus("At \(name): already marked done.")
             return
         }
 
@@ -209,9 +323,10 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
             record.property = property
             record.storm = storm
             try? context.save()
-            statusText = "Marked \(name) done."
+            refreshRegions(around: location)
+            setStatus("Marked \(name) done.")
         } else {
-            statusText = "At \(name): \(formatTime(elapsed)) of \(formatTime(dwellSeconds))"
+            setStatus("At \(name): \(formatTime(elapsed)) of \(formatTime(dwellSeconds))")
         }
     }
 }
