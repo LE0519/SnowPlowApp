@@ -3,6 +3,7 @@ import SwiftData
 
 @Model
 final class Customer {
+    var uuid: UUID?
     var name: String
     var notes: String
     var createdAt: Date
@@ -11,6 +12,7 @@ final class Customer {
     var properties: [Property] = []
 
     init(name: String = "", notes: String = "") {
+        self.uuid = UUID()
         self.name = name
         self.notes = notes
         self.createdAt = Date()
