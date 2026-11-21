@@ -3,6 +3,7 @@ import SwiftData
 
 @Model
 final class Property {
+    var uuid: UUID?
     var address: String
     var latitude: Double?
     var longitude: Double?
@@ -16,6 +17,7 @@ final class Property {
          latitude: Double? = nil,
          longitude: Double? = nil,
          radiusMeters: Double = 100) {
+        self.uuid = UUID()
         self.address = address
         self.latitude = latitude
         self.longitude = longitude
