@@ -27,6 +27,7 @@ struct ContentView: View {
                 }
         }
         .onAppear {
+            DataMaintenance.assignMissingIDs(in: modelContext)
             locationService.configure(context: modelContext)
         }
     }
