@@ -8,6 +8,7 @@ struct StormView: View {
     @Query(sort: \Storm.startedAt, order: .reverse) private var storms: [Storm]
     @Query private var properties: [Property]
     @AppStorage("driverName") private var driverName = "Driver"
+    @AppStorage("dwellMinutes") private var dwellMinutes = 3
 
     private var activeStorm: Storm? {
         storms.first { $0.isActive }
@@ -63,9 +64,17 @@ struct StormView: View {
     @ViewBuilder
     private func activeSection(_ storm: Storm) -> some View {
         Section {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(storm.name)
                     .font(.headline)
+                HStack {
+                    Text("Storm time")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(storm.startedAt, style: .timer)
+                        .font(.title2.monospacedDigit())
+                        .bold()
+                }
                 Text("Started \(storm.startedAt.formatted(date: .abbreviated, time: .shortened))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -80,6 +89,22 @@ struct StormView: View {
         }
 
         Section("GPS") {
+            if let name = locationService.arrivedName, let since = locationService.arrivedAt {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("At \(name)")
+                            .font(.headline)
+                        Text(locationService.arrivedIsDone
+                             ? "Already marked done"
+                             : "Checks off automatically at \(dwellMinutes):00")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Text(since, style: .timer)
+                        .font(.title2.monospacedDigit())
+                }
+            }
             Text(locationService.statusText)
                 .font(.subheadline)
             if locationService.isDenied {
@@ -148,7 +173,10 @@ struct StormPropertyRow: View {
 
     private var title: String {
         let name = property.customer?.name ?? ""
-        return name.isEmpty ? "(No name)" : name
+        if !name.isEmpty {
+            return name
+        }
+        return property.address.isEmpty ? "(No name)" : property.address
     }
 
     private func doneText(_ latest: ServiceRecord, visits: Int) -> String {
