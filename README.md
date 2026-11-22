@@ -1,5 +1,4 @@
 # SnowPlowApp
-# SnowPlowApp
 
 A native iPhone app for a snow-plowing company. It notices when a driver arrives at a customer's property, checks the property off automatically after a set time, and copies completed jobs to the cloud so other phones can see them. It is built to keep working with poor or no cell service.
 
