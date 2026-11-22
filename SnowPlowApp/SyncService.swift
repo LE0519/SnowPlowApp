@@ -13,7 +13,7 @@ final class SyncService {
     var statusText = "Cloud sync is off."
     var detailText = ""
 
-    private let collectionNames = ["customers", "properties", "storms", "records"]
+    private let collectionNames = ["customers", "properties", "storms", "records", "shifts"]
     private var context: ModelContext?
     private var listeners: [ListenerRegistration] = []
     private var timer: Timer?
@@ -25,6 +25,7 @@ final class SyncService {
     private var lastPushed: [UUID: String] = [:]
     private var pendingPropertyLinks: [UUID: UUID] = [:]
     private var pendingRecordLinks: [UUID: RecordLink] = [:]
+    private var pendingShiftLinks: [UUID: UUID] = [:]
 
     private struct RecordLink {
         let propertyID: UUID?
@@ -75,6 +76,7 @@ final class SyncService {
         lastPushed = [:]
         pendingPropertyLinks = [:]
         pendingRecordLinks = [:]
+        pendingShiftLinks = [:]
         statusText = "Cloud sync is off."
         detailText = ""
     }
@@ -143,11 +145,14 @@ final class SyncService {
             applyProperties(changes, context: context)
         case "storms":
             applyStorms(changes, context: context)
-        default:
+        case "records":
             applyRecords(changes, context: context)
+        default:
+            applyShifts(changes, context: context)
         }
 
         resolveLinks(context: context)
+        ShiftActions.closeEndedStormShifts(in: context)
         try? context.save()
 
         firstSnapshotDone.insert(name)
@@ -310,6 +315,41 @@ final class SyncService {
         }
     }
 
+    private func applyShifts(_ changes: [Change], context: ModelContext) {
+        if changes.isEmpty { return }
+        var byID: [UUID: Shift] = [:]
+        for shift in (try? context.fetch(FetchDescriptor<Shift>())) ?? [] {
+            if let id = shift.uuid { byID[id] = shift }
+        }
+        for change in changes {
+            if change.removed {
+                pendingShiftLinks[change.id] = nil
+                if let existing = byID[change.id] { context.delete(existing) }
+                continue
+            }
+            let shift: Shift
+            if let existing = byID[change.id] {
+                shift = existing
+            } else {
+                shift = Shift(driverName: "", driverUID: nil)
+                shift.uuid = change.id
+                context.insert(shift)
+                byID[change.id] = shift
+            }
+            shift.driverName = change.data["driverName"] as? String ?? ""
+            shift.driverUID = change.data["driverUID"] as? String
+            if let started = change.data["startedAt"] as? Timestamp {
+                shift.startedAt = started.dateValue()
+            }
+            shift.endedAt = (change.data["endedAt"] as? Timestamp)?.dateValue()
+            if let text = change.data["stormID"] as? String, let stormID = UUID(uuidString: text) {
+                pendingShiftLinks[change.id] = stormID
+            } else {
+                pendingShiftLinks[change.id] = nil
+            }
+        }
+    }
+
     /// Connects properties to customers, and records to properties and storms, once both sides exist.
     private func resolveLinks(context: ModelContext) {
         if !pendingPropertyLinks.isEmpty {
@@ -356,6 +396,27 @@ final class SyncService {
                 if record.property !== property { record.property = property }
                 if record.storm !== storm { record.storm = storm }
                 pendingRecordLinks[recordID] = nil
+            }
+        }
+
+        if !pendingShiftLinks.isEmpty {
+            var storms: [UUID: Storm] = [:]
+            for storm in (try? context.fetch(FetchDescriptor<Storm>())) ?? [] {
+                if let id = storm.uuid { storms[id] = storm }
+            }
+            var shifts: [UUID: Shift] = [:]
+            for shift in (try? context.fetch(FetchDescriptor<Shift>())) ?? [] {
+                if let id = shift.uuid { shifts[id] = shift }
+            }
+            for (shiftID, stormID) in pendingShiftLinks {
+                guard let shift = shifts[shiftID] else {
+                    pendingShiftLinks[shiftID] = nil
+                    continue
+                }
+                if let storm = storms[stormID] {
+                    if shift.storm !== storm { shift.storm = storm }
+                    pendingShiftLinks[shiftID] = nil
+                }
             }
         }
     }
@@ -431,6 +492,22 @@ final class SyncService {
             if let propertyID = record.property?.uuid { data["propertyID"] = propertyID.uuidString }
             if let stormID = record.storm?.uuid { data["stormID"] = stormID.uuidString }
             send("records", record.id, data)
+        }
+
+        for shift in (try? context.fetch(FetchDescriptor<Shift>())) ?? [] {
+            guard let id = shift.uuid else { continue }
+            if pendingShiftLinks[id] != nil {
+                send("shifts", id, nil)
+                continue
+            }
+            var data: [String: Any] = [
+                "driverName": shift.driverName,
+                "startedAt": Timestamp(date: shift.startedAt)
+            ]
+            if let uid = shift.driverUID { data["driverUID"] = uid }
+            if let ended = shift.endedAt { data["endedAt"] = Timestamp(date: ended) }
+            if let stormID = shift.storm?.uuid { data["stormID"] = stormID.uuidString }
+            send("shifts", id, data)
         }
 
         // Things deleted on this phone get deleted in the cloud too.
