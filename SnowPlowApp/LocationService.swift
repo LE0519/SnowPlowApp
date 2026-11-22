@@ -9,6 +9,11 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
     var authorization: CLAuthorizationStatus = .notDetermined
     var statusText = "GPS is off."
 
+    // Shown live on the Storm screen while you are at a property.
+    var arrivedName: String?
+    var arrivedAt: Date?
+    var arrivedIsDone = false
+
     var isDenied: Bool {
         authorization == .denied || authorization == .restricted
     }
@@ -74,6 +79,9 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         timer = nil
         enteredAt = [:]
         lastLocation = nil
+        arrivedName = nil
+        arrivedAt = nil
+        arrivedIsDone = false
         statusText = "GPS is off."
     }
 
@@ -110,7 +118,7 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         refreshRegions(around: manager.location)
 
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
             self?.evaluate()
         }
     }
@@ -296,6 +304,9 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
 
         guard let property = best else {
             enteredAt = [:]
+            arrivedName = nil
+            arrivedAt = nil
+            arrivedIsDone = false
             setStatus("Watching for arrivals. Not at a saved property.")
             return
         }
@@ -309,11 +320,16 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         let customerName = property.customer?.name ?? ""
         let name = customerName.isEmpty ? "(No name)" : customerName
 
+        arrivedName = name
+        arrivedAt = enteredAt[id]
+
         // Never auto-complete the same property twice in one storm.
         if storm.records.contains(where: { $0.property === property }) {
+            arrivedIsDone = true
             setStatus("At \(name): already marked done.")
             return
         }
+        arrivedIsDone = false
 
         let elapsed = Date().timeIntervalSince(enteredAt[id] ?? Date())
         if elapsed >= dwellSeconds {
@@ -323,10 +339,11 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
             record.property = property
             record.storm = storm
             try? context.save()
+            arrivedIsDone = true
             refreshRegions(around: location)
             setStatus("Marked \(name) done.")
         } else {
-            setStatus("At \(name): \(formatTime(elapsed)) of \(formatTime(dwellSeconds))")
+            setStatus("At \(name).")
         }
     }
 }
