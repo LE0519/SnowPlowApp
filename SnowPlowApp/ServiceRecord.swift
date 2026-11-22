@@ -7,6 +7,8 @@ final class ServiceRecord {
     var completedAt: Date
     var driverName: String
     var isAutomatic: Bool
+    var arrivedAt: Date?
+    var departedAt: Date?
     var storm: Storm?
     var property: Property?
 
