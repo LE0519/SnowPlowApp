@@ -7,6 +7,7 @@ final class Storm {
     var name: String
     var startedAt: Date
     var endedAt: Date?
+    var snowInches: Double?
 
     @Relationship(deleteRule: .cascade, inverse: \ServiceRecord.storm)
     var records: [ServiceRecord] = []
