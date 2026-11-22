@@ -245,6 +245,8 @@ final class SyncService {
             property.radiusMeters = change.data["radiusMeters"] as? Double ?? 100
             property.latitude = change.data["latitude"] as? Double
             property.longitude = change.data["longitude"] as? Double
+            property.isPriority = (change.data["isPriority"] as? Bool) ?? false
+            property.deadlineMinutes = change.data["deadlineMinutes"] as? Int
             if let customerText = change.data["customerID"] as? String,
                let customerID = UUID(uuidString: customerText) {
                 pendingPropertyLinks[change.id] = customerID
@@ -406,6 +408,8 @@ final class SyncService {
             if let lat = property.latitude { data["latitude"] = lat }
             if let lon = property.longitude { data["longitude"] = lon }
             if let customerID = property.customer?.uuid { data["customerID"] = customerID.uuidString }
+            if property.isPriorityFlag { data["isPriority"] = true }
+            if let deadline = property.deadlineMinutes { data["deadlineMinutes"] = deadline }
             send("properties", id, data)
         }
 
@@ -473,7 +477,7 @@ final class SyncService {
             } else if let string = value as? String {
                 text = string
             } else if let number = value as? NSNumber {
-                if key == "isAutomatic" {
+                if key == "isAutomatic" || key == "isPriority" {
                     text = number.boolValue ? "true" : "false"
                 } else {
                     text = String(format: "%.7f", number.doubleValue)
