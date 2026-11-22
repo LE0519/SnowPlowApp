@@ -172,6 +172,17 @@ struct HomeView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal)
 
+        if !locationService.isTracking {
+            Button {
+                locationService.start()
+            } label: {
+                Label("Start GPS on this phone", systemImage: "location.fill")
+                    .font(.title3.bold())
+                    .frame(maxWidth: .infinity, minHeight: 56)
+            }
+            .buttonStyle(.borderedProminent)
+        }
+
         Button(role: .destructive) {
             confirmEnd = true
         } label: {
