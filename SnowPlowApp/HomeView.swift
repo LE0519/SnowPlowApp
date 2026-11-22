@@ -5,6 +5,7 @@ import UIKit
 struct HomeView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(LocationService.self) private var locationService
+    @Environment(AuthService.self) private var auth
     @Query(sort: \Storm.startedAt, order: .reverse) private var storms: [Storm]
     @Query private var properties: [Property]
     @Query private var customers: [Customer]
@@ -71,6 +72,8 @@ struct HomeView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+
+        hoursLink
     }
 
     // MARK: - Storm running
@@ -172,16 +175,48 @@ struct HomeView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal)
 
-        if !locationService.isTracking {
+        if let shift = myOpenShift(storm) {
+            VStack(spacing: 10) {
+                HStack {
+                    Label("Clocked in", systemImage: "clock.fill")
+                        .font(.headline)
+                    Spacer()
+                    Text(shift.startedAt, style: .timer)
+                        .font(.title2.monospacedDigit().bold())
+                }
+                if !locationService.isTracking {
+                    Button {
+                        locationService.start()
+                    } label: {
+                        Label("GPS is off. Tap to restart it", systemImage: "location.fill")
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .buttonStyle(.bordered)
+                }
+                Button {
+                    clockOut(shift)
+                } label: {
+                    Label("Clock Out", systemImage: "clock")
+                        .font(.title3.bold())
+                        .frame(maxWidth: .infinity, minHeight: 52)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.orange)
+            }
+            .padding()
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        } else {
             Button {
-                locationService.start()
+                clockIn(to: storm)
             } label: {
-                Label("Start GPS on this phone", systemImage: "location.fill")
-                    .font(.title3.bold())
-                    .frame(maxWidth: .infinity, minHeight: 56)
+                Label("Clock In", systemImage: "clock.fill")
+                    .font(.title2.bold())
+                    .frame(maxWidth: .infinity, minHeight: 64)
             }
             .buttonStyle(.borderedProminent)
         }
+
+        hoursLink
 
         Button(role: .destructive) {
             confirmEnd = true
@@ -193,16 +228,61 @@ struct HomeView: View {
         .buttonStyle(.bordered)
     }
 
+    private var hoursLink: some View {
+        NavigationLink {
+            HoursView()
+        } label: {
+            HStack {
+                Label(auth.isDriver ? "My hours" : "Plow hours", systemImage: "clock")
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .foregroundStyle(.secondary)
+            }
+            .font(.headline)
+            .padding()
+            .frame(maxWidth: .infinity)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func myOpenShift(_ storm: Storm) -> Shift? {
+        storm.shifts.first { $0.endedAt == nil && $0.driverUID == auth.userID }
+    }
+
     private func startStorm() {
         let name = "Storm " + Date().formatted(date: .abbreviated, time: .omitted)
-        modelContext.insert(Storm(name: name))
+        let storm = Storm(name: name)
+        modelContext.insert(storm)
+        // Starting a storm also clocks you in.
+        clockIn(to: storm)
+    }
+
+    private func clockIn(to storm: Storm) {
+        let shift = Shift(driverName: driverName, driverUID: auth.userID)
+        modelContext.insert(shift)
+        shift.storm = storm
         try? modelContext.save()
         locationService.start()
     }
 
+    private func clockOut(_ shift: Shift) {
+        shift.endedAt = Date()
+        try? modelContext.save()
+        locationService.stop()
+    }
+
     private func endStorm() {
         if let storm = activeStorm {
-            storm.endedAt = Date()
+            let now = Date()
+            storm.endedAt = now
+            // The owner clocks everyone out. A driver clocks out only themselves,
+            // and the others are clocked out when they sync.
+            for shift in storm.shifts where shift.endedAt == nil {
+                if !auth.isDriver || shift.driverUID == auth.userID {
+                    shift.endedAt = now
+                }
+            }
             try? modelContext.save()
         }
         locationService.stop()
