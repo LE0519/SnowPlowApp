@@ -11,6 +11,10 @@ final class Storm {
     @Relationship(deleteRule: .cascade, inverse: \ServiceRecord.storm)
     var records: [ServiceRecord] = []
 
+    // Hours are kept even if an old storm is deleted.
+    @Relationship(deleteRule: .nullify, inverse: \Shift.storm)
+    var shifts: [Shift] = []
+
     var isActive: Bool {
         endedAt == nil
     }
