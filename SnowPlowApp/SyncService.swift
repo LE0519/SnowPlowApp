@@ -17,7 +17,8 @@ final class SyncService {
     private var context: ModelContext?
     private var listeners: [ListenerRegistration] = []
     private var timer: Timer?
-    private var isSigningIn = false
+    private var companyID: String?
+    private var canEditCustomers = true
     private var firstSnapshotDone: Set<String> = []
     private var didInitialPush = false
     private var remoteIDs: [String: Set<UUID>] = [:]
@@ -40,20 +41,21 @@ final class SyncService {
 
     func configure(context: ModelContext) {
         self.context = context
-        if UserDefaults.standard.bool(forKey: "cloudSyncEnabled"), !isEnabled {
-            start()
-        }
     }
 
-    func start() {
+    /// Starts syncing with a team's data. Drivers only receive customers and properties, they never send them.
+    func start(companyID: String, canEditCustomers: Bool) {
         guard context != nil else { return }
-        guard Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist") != nil else {
+        if isEnabled && self.companyID == companyID && self.canEditCustomers == canEditCustomers {
+            return
+        }
+        stop()
+        guard FirebaseSetup.configureIfPossible() else {
             statusText = "The Firebase settings file is missing from this build."
             return
         }
-        if FirebaseApp.app() == nil {
-            FirebaseApp.configure()
-        }
+        self.companyID = companyID
+        self.canEditCustomers = canEditCustomers
         isEnabled = true
         statusText = "Connecting..."
 
@@ -69,6 +71,10 @@ final class SyncService {
         timer?.invalidate()
         timer = nil
         removeListeners()
+        companyID = nil
+        lastPushed = [:]
+        pendingPropertyLinks = [:]
+        pendingRecordLinks = [:]
         statusText = "Cloud sync is off."
         detailText = ""
     }
@@ -87,13 +93,17 @@ final class SyncService {
         remoteIDs = [:]
     }
 
+    private var companyReference: DocumentReference? {
+        guard let companyID = companyID else { return nil }
+        return Firestore.firestore().collection("companies").document(companyID)
+    }
+
     // MARK: - Regular check
 
     private func tick() {
         guard isEnabled else { return }
-
-        if Auth.auth().currentUser == nil {
-            signIn()
+        guard Auth.auth().currentUser != nil else {
+            statusText = "Sign in to sync."
             return
         }
         if listeners.isEmpty {
@@ -102,25 +112,8 @@ final class SyncService {
         pushChanges()
     }
 
-    private func signIn() {
-        guard !isSigningIn else { return }
-        isSigningIn = true
-        statusText = "Signing in..."
-        Auth.auth().signInAnonymously { [weak self] _, error in
-            DispatchQueue.main.async {
-                guard let self = self else { return }
-                self.isSigningIn = false
-                if let error = error {
-                    self.statusText = "Waiting to sign in: \(error.localizedDescription)"
-                } else {
-                    self.tick()
-                }
-            }
-        }
-    }
-
     private func attachListeners() {
-        let company = Firestore.firestore().collection("companies").document("main")
+        guard let company = companyReference else { return }
         for name in collectionNames {
             let listener = company.collection(name).addSnapshotListener { [weak self] snapshot, error in
                 self?.handle(name, snapshot, error)
@@ -373,7 +366,7 @@ final class SyncService {
         guard isEnabled, let context = context,
               firstSnapshotDone.count == collectionNames.count else { return }
 
-        let company = Firestore.firestore().collection("companies").document("main")
+        guard let company = companyReference else { return }
         var localIDs: [String: Set<UUID>] = [:]
 
         // Records an object as existing on this phone and sends it only if it changed.
@@ -387,6 +380,7 @@ final class SyncService {
         }
 
         for customer in (try? context.fetch(FetchDescriptor<Customer>())) ?? [] {
+            guard canEditCustomers else { break }
             guard let id = customer.uuid else { continue }
             send("customers", id, [
                 "name": customer.name,
@@ -396,6 +390,7 @@ final class SyncService {
         }
 
         for property in (try? context.fetch(FetchDescriptor<Property>())) ?? [] {
+            guard canEditCustomers else { break }
             guard let id = property.uuid else { continue }
             if pendingPropertyLinks[id] != nil {
                 send("properties", id, nil)
@@ -443,6 +438,7 @@ final class SyncService {
         let phoneHasAnything = localIDs.values.contains { !$0.isEmpty }
         if phoneHasAnything {
             for name in collectionNames {
+                if !canEditCustomers && (name == "customers" || name == "properties") { continue }
                 let local = localIDs[name] ?? []
                 for id in remoteIDs[name] ?? [] where !local.contains(id) {
                     company.collection(name).document(id.uuidString).delete()
