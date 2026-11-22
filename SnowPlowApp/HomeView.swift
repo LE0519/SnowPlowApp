@@ -34,13 +34,16 @@ struct HomeView: View {
                 .padding()
             }
             .navigationTitle("Home")
-            .alert("End this storm?", isPresented: $confirmEnd) {
-                Button("End storm", role: .destructive) {
-                    endStorm()
+            .sheet(isPresented: $confirmEnd) {
+                SnowInchesSheet(
+                    title: "End this storm?",
+                    message: "GPS watching will stop for this storm.",
+                    initial: nil,
+                    actionTitle: "End Storm",
+                    isDestructive: true
+                ) { inches in
+                    endStorm(inches: inches)
                 }
-                Button("Keep going", role: .cancel) { }
-            } message: {
-                Text("GPS watching will stop for this storm.")
             }
         }
     }
@@ -228,6 +231,7 @@ struct HomeView: View {
         .buttonStyle(.bordered)
     }
 
+    @ViewBuilder
     private var hoursLink: some View {
         NavigationLink {
             HoursView()
@@ -244,6 +248,24 @@ struct HomeView: View {
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
         }
         .buttonStyle(.plain)
+
+        if !auth.isDriver {
+            NavigationLink {
+                PlowTimesView()
+            } label: {
+                HStack {
+                    Label("Plow times (learning)", systemImage: "chart.bar")
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .foregroundStyle(.secondary)
+                }
+                .font(.headline)
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+            }
+            .buttonStyle(.plain)
+        }
     }
 
     private func myOpenShift(_ storm: Storm) -> Shift? {
@@ -272,10 +294,11 @@ struct HomeView: View {
         locationService.stop()
     }
 
-    private func endStorm() {
+    private func endStorm(inches: Double?) {
         if let storm = activeStorm {
             let now = Date()
             storm.endedAt = now
+            storm.snowInches = inches
             // The owner clocks everyone out. A driver clocks out only themselves,
             // and the others are clocked out when they sync.
             for shift in storm.shifts where shift.endedAt == nil {
