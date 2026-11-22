@@ -1,14 +1,31 @@
 import SwiftUI
 
 struct SettingsView: View {
+    @Environment(AuthService.self) private var auth
     @Environment(SyncService.self) private var syncService
     @AppStorage("driverName") private var driverName = "Driver"
     @AppStorage("dwellMinutes") private var dwellMinutes = 3
-    @AppStorage("cloudSyncEnabled") private var cloudSyncEnabled = false
 
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    NavigationLink {
+                        AccountView()
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Label("Team and account", systemImage: "person.badge.key")
+                            Text(teamSummary)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Text("Team")
+                } footer: {
+                    Text("Sign in and join a team to share customers and jobs between phones. Your location is never sent.")
+                }
+
                 Section {
                     TextField("Your name", text: $driverName)
                 } header: {
@@ -24,35 +41,18 @@ struct SettingsView: View {
                 } footer: {
                     Text("A property is checked off automatically after you stay inside its circle this long. Use 1 minute while testing.")
                 }
-
-                Section {
-                    Toggle("Sync with the cloud", isOn: $cloudSyncEnabled)
-                    if cloudSyncEnabled {
-                        Text(syncService.statusText)
-                            .font(.subheadline)
-                        if !syncService.detailText.isEmpty {
-                            Text(syncService.detailText)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Button("Sync now") {
-                            syncService.syncNow()
-                        }
-                    }
-                } header: {
-                    Text("Cloud sync")
-                } footer: {
-                    Text("Copies your customers, properties, and completed jobs to the cloud so other phones can see them. It works offline and catches up when you have signal. Your location is never sent.")
-                }
             }
             .navigationTitle("Settings")
-            .onChange(of: cloudSyncEnabled) { _, isOn in
-                if isOn {
-                    syncService.start()
-                } else {
-                    syncService.stop()
-                }
-            }
         }
+    }
+
+    private var teamSummary: String {
+        if auth.inTeam {
+            return "\(auth.companyName) (\(auth.isOwner ? "owner" : "driver")). \(syncService.statusText)"
+        }
+        if auth.isSignedIn {
+            return "Signed in, not in a team yet"
+        }
+        return "Not signed in"
     }
 }
