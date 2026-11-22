@@ -11,6 +11,8 @@ struct NewCustomerView: View {
     @State private var latitude: Double?
     @State private var longitude: Double?
     @State private var radius: Double = 100
+    @State private var isPriority = false
+    @State private var deadlineMinutes: Int?
 
     private var canSave: Bool {
         let hasName = !name.trimmingCharacters(in: .whitespaces).isEmpty
@@ -34,6 +36,7 @@ struct NewCustomerView: View {
                         in: 50...500,
                         step: 25
                     )
+                    PriorityEditor(isPriority: $isPriority, deadlineMinutes: $deadlineMinutes)
                 }
             }
             .navigationTitle("New Customer")
@@ -71,6 +74,8 @@ struct NewCustomerView: View {
             )
             modelContext.insert(property)
             property.customer = customer
+            property.isPriority = isPriority ? true : nil
+            property.deadlineMinutes = isPriority ? deadlineMinutes : nil
         }
 
         try? modelContext.save()
