@@ -3,6 +3,7 @@ import SwiftData
 
 struct CustomerListView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(AuthService.self) private var auth
     @Query(sort: \Customer.name) private var customers: [Customer]
     @State private var showingNewCustomer = false
 
@@ -22,31 +23,34 @@ struct CustomerListView: View {
                         }
                     }
                 }
-                .onDelete(perform: deleteCustomers)
+                .onDelete(perform: auth.canEditCustomers ? deleteCustomers : nil)
             }
             .overlay {
                 if customers.isEmpty {
                     ContentUnavailableView(
                         "No customers yet",
                         systemImage: "person.crop.circle.badge.plus",
-                        description: Text("Tap + to add your first customer.")
+                        description: Text(auth.canEditCustomers
+                                          ? "Tap + to add your first customer."
+                                          : "Your team's customers appear here after syncing.")
                     )
                 }
             }
             .navigationTitle("Customers")
             .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        showingNewCustomer = true
-                    } label: {
-                        Image(systemName: "plus")
+                if auth.canEditCustomers {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            showingNewCustomer = true
+                        } label: {
+                            Image(systemName: "plus")
+                        }
                     }
                 }
             }
             .sheet(isPresented: $showingNewCustomer) {
                 NewCustomerView()
             }
-            .onAppear(perform: removeEmptyCustomers)
         }
     }
 
@@ -72,16 +76,6 @@ struct CustomerListView: View {
     private func deleteCustomers(at offsets: IndexSet) {
         for index in offsets {
             modelContext.delete(customers[index])
-        }
-    }
-
-    // Cleans up customers that have no name and no properties.
-    private func removeEmptyCustomers() {
-        let empties = customers.filter {
-            $0.name.trimmingCharacters(in: .whitespaces).isEmpty && $0.properties.isEmpty
-        }
-        for customer in empties {
-            modelContext.delete(customer)
         }
     }
 }
