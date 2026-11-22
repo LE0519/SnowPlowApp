@@ -1,6 +1,5 @@
 import SwiftUI
 import SwiftData
-import CoreLocation
 
 struct CustomerEditView: View {
     @Environment(\.modelContext) private var modelContext
@@ -26,7 +25,7 @@ struct CustomerEditView: View {
                 }
             }
         }
-        .navigationTitle(customer.name.isEmpty ? "New Customer" : customer.name)
+        .navigationTitle(customer.name.isEmpty ? "Customer" : customer.name)
         .navigationBarTitleDisplayMode(.inline)
     }
 
@@ -45,26 +44,14 @@ struct CustomerEditView: View {
 
 struct PropertyRow: View {
     @Bindable var property: Property
-    @State private var isSearching = false
-    @State private var message: String?
-
-    private var addressIsEmpty: Bool {
-        property.address.trimmingCharacters(in: .whitespaces).isEmpty
-    }
-
-    private var statusText: String {
-        if let message = message {
-            return message
-        }
-        if let lat = property.latitude, let lon = property.longitude {
-            return String(format: "Saved location: %.5f, %.5f", lat, lon)
-        }
-        return "No map location yet."
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            TextField("Address (include city and state)", text: $property.address, axis: .vertical)
+            AddressField(
+                text: $property.address,
+                latitude: $property.latitude,
+                longitude: $property.longitude
+            )
 
             Stepper(
                 "Arrival radius: \(Int(property.radiusMeters)) m",
@@ -72,52 +59,7 @@ struct PropertyRow: View {
                 in: 50...500,
                 step: 25
             )
-
-            HStack {
-                Button {
-                    Task { await findOnMap() }
-                } label: {
-                    Label("Find on map", systemImage: "mappin.and.ellipse")
-                }
-                .buttonStyle(.borderless)
-                .disabled(isSearching || addressIsEmpty)
-
-                Spacer()
-
-                if isSearching {
-                    ProgressView()
-                }
-            }
-
-            Text(statusText)
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
-        .onChange(of: property.address) { _, _ in
-            // If the address is edited, the old map location is no longer trustworthy.
-            property.latitude = nil
-            property.longitude = nil
-            message = nil
-        }
-    }
-
-    private func findOnMap() async {
-        isSearching = true
-        message = nil
-        defer { isSearching = false }
-
-        do {
-            let placemarks = try await CLGeocoder().geocodeAddressString(property.address)
-            if let location = placemarks.first?.location {
-                property.latitude = location.coordinate.latitude
-                property.longitude = location.coordinate.longitude
-                message = "Location found and saved."
-            } else {
-                message = "No match found. Try adding the city and state."
-            }
-        } catch {
-            message = "Could not look up that address. Check your internet connection and try again."
-        }
     }
 }
