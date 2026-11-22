@@ -39,7 +39,7 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
     func configure(context: ModelContext) {
         self.context = context
         // If the app was reopened (or restarted by iOS) during a storm, pick tracking back up.
-        if !isTracking, activeStorm() != nil {
+        if !isTracking, let storm = activeStorm(), hasOpenShift(in: storm) {
             start()
         }
     }
@@ -218,7 +218,7 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
     func locationManager(_ manager: CLLocationManager, didEnterRegion region: CLRegion) {
         // iOS woke the app because we drove into a property's area. Make sure full GPS watching is on,
         // and start the arrival timer from now.
-        if !isTracking, activeStorm() != nil {
+        if !isTracking, let storm = activeStorm(), hasOpenShift(in: storm) {
             start()
         }
         if let context = context, let uuid = UUID(uuidString: region.identifier) {
@@ -250,6 +250,12 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         guard let context = context else { return nil }
         let storms = (try? context.fetch(FetchDescriptor<Storm>())) ?? []
         return storms.first { $0.isActive }
+    }
+
+    /// GPS only runs for someone who is clocked in.
+    private func hasOpenShift(in storm: Storm) -> Bool {
+        let uid = CurrentUser.uid
+        return storm.shifts.contains { $0.endedAt == nil && $0.driverUID == uid }
     }
 
     private func formatTime(_ seconds: TimeInterval) -> String {
