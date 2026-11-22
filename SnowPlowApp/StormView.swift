@@ -8,6 +8,7 @@ struct StormView: View {
     @Query(sort: \Storm.startedAt, order: .reverse) private var storms: [Storm]
     @Query private var properties: [Property]
     @AppStorage("driverName") private var driverName = "Driver"
+    @State private var stormToEdit: Storm?
 
     private var activeStorm: Storm? {
         storms.first { $0.isActive }
@@ -76,19 +77,40 @@ struct StormView: View {
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                             }
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                stormToEdit = storm
+                            }
                         }
                         .onDelete(perform: auth.isDriver ? nil : deletePastStorms)
                     }
                 }
             }
             .navigationTitle("Jobs")
+            .sheet(item: $stormToEdit) { storm in
+                SnowInchesSheet(
+                    title: "Snowfall",
+                    message: storm.name,
+                    initial: storm.snowInches,
+                    actionTitle: "Save"
+                ) { inches in
+                    storm.snowInches = inches
+                    try? modelContext.save()
+                }
+            }
         }
     }
 
     private func summary(for storm: Storm) -> String {
         let propertyCount = Set(storm.records.compactMap { $0.property?.persistentModelID }).count
         let visits = storm.records.count
-        return "\(propertyCount) properties, \(visits) visits"
+        var text = "\(propertyCount) properties, \(visits) visits"
+        if let inches = storm.snowInches {
+            text += ", \(inches.formatted()) in of snow"
+        } else {
+            text += ", tap to add snowfall"
+        }
+        return text
     }
 
     private func deletePastStorms(at offsets: IndexSet) {
