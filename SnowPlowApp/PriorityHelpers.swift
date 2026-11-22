@@ -18,12 +18,17 @@ extension Property {
     /// The next time this property's "done by" time comes around after the storm began.
     /// A storm that starts at 10 PM with a 7:00 AM deadline means 7:00 AM the next morning.
     func deadline(for storm: Storm) -> Date? {
+        deadline(after: storm.startedAt)
+    }
+
+    /// The next time this property's "done by" time comes around after the given moment.
+    func deadline(after date: Date) -> Date? {
         guard isPriorityFlag, let minutes = deadlineMinutes else { return nil }
         var parts = DateComponents()
         parts.hour = minutes / 60
         parts.minute = minutes % 60
         return Calendar.current.nextDate(
-            after: storm.startedAt,
+            after: date,
             matching: parts,
             matchingPolicy: .nextTime
         )
