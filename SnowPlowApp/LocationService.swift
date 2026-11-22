@@ -273,7 +273,8 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         guard isTracking, let context = context else { return }
 
         guard let storm = activeStorm() else {
-            setStatus("No active storm.")
+            // The storm was ended (maybe from another phone), so stop using GPS and battery.
+            stop()
             return
         }
         guard let location = lastLocation else {
