@@ -3,6 +3,7 @@ import SwiftData
 
 struct CustomerEditView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(AuthService.self) private var auth
     @Bindable var customer: Customer
 
     var body: some View {
@@ -16,17 +17,20 @@ struct CustomerEditView: View {
                 ForEach(customer.properties) { property in
                     PropertyRow(property: property)
                 }
-                .onDelete(perform: deleteProperties)
+                .onDelete(perform: auth.canEditCustomers ? deleteProperties : nil)
 
-                Button {
-                    addProperty()
-                } label: {
-                    Label("Add property", systemImage: "plus.circle")
+                if auth.canEditCustomers {
+                    Button {
+                        addProperty()
+                    } label: {
+                        Label("Add property", systemImage: "plus.circle")
+                    }
                 }
             }
         }
         .navigationTitle(customer.name.isEmpty ? "Customer" : customer.name)
         .navigationBarTitleDisplayMode(.inline)
+        .disabled(!auth.canEditCustomers)
     }
 
     private func addProperty() {
