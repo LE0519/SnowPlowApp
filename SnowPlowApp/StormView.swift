@@ -8,7 +8,6 @@ struct StormView: View {
     @Query(sort: \Storm.startedAt, order: .reverse) private var storms: [Storm]
     @Query private var properties: [Property]
     @AppStorage("driverName") private var driverName = "Driver"
-    @State private var stormToEdit: Storm?
 
     private var activeStorm: Storm? {
         storms.first { $0.isActive }
@@ -70,16 +69,19 @@ struct StormView: View {
                 if !pastStorms.isEmpty {
                     Section("Past storms") {
                         ForEach(pastStorms) { storm in
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(storm.name)
-                                    .font(.headline)
-                                Text(summary(for: storm))
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                stormToEdit = storm
+                            NavigationLink {
+                                StormDetailView(storm: storm)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(storm.name)
+                                        .font(.headline)
+                                    Text(storm.startedAt.formatted(date: .abbreviated, time: .shortened))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    Text(summary(for: storm))
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
                         }
                         .onDelete(perform: auth.isDriver ? nil : deletePastStorms)
@@ -87,17 +89,6 @@ struct StormView: View {
                 }
             }
             .navigationTitle("Jobs")
-            .sheet(item: $stormToEdit) { storm in
-                SnowInchesSheet(
-                    title: "Snowfall",
-                    message: storm.name,
-                    initial: storm.snowInches,
-                    actionTitle: "Save"
-                ) { inches in
-                    storm.snowInches = inches
-                    try? modelContext.save()
-                }
-            }
         }
     }
 
@@ -107,8 +98,6 @@ struct StormView: View {
         var text = "\(propertyCount) properties, \(visits) visits"
         if let inches = storm.snowInches {
             text += ", \(inches.formatted()) in of snow"
-        } else {
-            text += ", tap to add snowfall"
         }
         return text
     }
