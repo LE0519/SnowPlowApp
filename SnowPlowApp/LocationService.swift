@@ -275,6 +275,27 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         statusText = full
     }
 
+    /// When we leave a property (or drive straight to another one), note when that visit ended.
+    /// These arrival and departure times are what the app learns plow times from.
+    private func recordDepartures(keeping keepID: PersistentIdentifier?, at time: Date,
+                                  storm: Storm, properties: [Property]) {
+        var changed = false
+        for (id, _) in enteredAt where id != keepID {
+            guard let property = properties.first(where: { $0.persistentModelID == id }) else { continue }
+            let latest = storm.records
+                .filter { $0.property === property && $0.isAutomatic && $0.arrivedAt != nil && $0.departedAt == nil }
+                .sorted { $0.completedAt > $1.completedAt }
+                .first
+            if let record = latest {
+                record.departedAt = time
+                changed = true
+            }
+        }
+        if changed {
+            try? context?.save()
+        }
+    }
+
     private func evaluate() {
         guard isTracking, let context = context else { return }
 
@@ -310,6 +331,7 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         }
 
         guard let property = best else {
+            recordDepartures(keeping: nil, at: location.timestamp, storm: storm, properties: properties)
             enteredAt = [:]
             arrivedName = nil
             arrivedAt = nil
@@ -319,6 +341,7 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         }
 
         let id = property.persistentModelID
+        recordDepartures(keeping: id, at: location.timestamp, storm: storm, properties: properties)
         enteredAt = enteredAt.filter { $0.key == id }
         if enteredAt[id] == nil {
             enteredAt[id] = Date()
@@ -343,6 +366,7 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
             let driver = UserDefaults.standard.string(forKey: "driverName") ?? "Driver"
             let record = ServiceRecord(driverName: driver, isAutomatic: true)
             context.insert(record)
+            record.arrivedAt = enteredAt[id]
             record.property = property
             record.storm = storm
             try? context.save()
