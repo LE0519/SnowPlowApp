@@ -280,6 +280,7 @@ final class SyncService {
                 storm.startedAt = started.dateValue()
             }
             storm.endedAt = (change.data["endedAt"] as? Timestamp)?.dateValue()
+            storm.snowInches = change.data["snowInches"] as? Double
         }
     }
 
@@ -309,6 +310,8 @@ final class SyncService {
             if let completed = change.data["completedAt"] as? Timestamp {
                 record.completedAt = completed.dateValue()
             }
+            record.arrivedAt = (change.data["arrivedAt"] as? Timestamp)?.dateValue()
+            record.departedAt = (change.data["departedAt"] as? Timestamp)?.dateValue()
             let propertyID = UUID(uuidString: change.data["propertyID"] as? String ?? "")
             let stormID = UUID(uuidString: change.data["stormID"] as? String ?? "")
             pendingRecordLinks[change.id] = RecordLink(propertyID: propertyID, stormID: stormID)
@@ -476,6 +479,7 @@ final class SyncService {
                 "startedAt": Timestamp(date: storm.startedAt)
             ]
             if let ended = storm.endedAt { data["endedAt"] = Timestamp(date: ended) }
+            if let inches = storm.snowInches { data["snowInches"] = inches }
             send("storms", id, data)
         }
 
@@ -491,6 +495,8 @@ final class SyncService {
             ]
             if let propertyID = record.property?.uuid { data["propertyID"] = propertyID.uuidString }
             if let stormID = record.storm?.uuid { data["stormID"] = stormID.uuidString }
+            if let arrived = record.arrivedAt { data["arrivedAt"] = Timestamp(date: arrived) }
+            if let departed = record.departedAt { data["departedAt"] = Timestamp(date: departed) }
             send("records", record.id, data)
         }
 
