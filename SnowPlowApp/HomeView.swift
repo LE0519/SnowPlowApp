@@ -249,6 +249,22 @@ struct HomeView: View {
         }
         .buttonStyle(.plain)
 
+        NavigationLink {
+            RouteView()
+        } label: {
+            HStack {
+                Label("Route planner", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .foregroundStyle(.secondary)
+            }
+            .font(.headline)
+            .padding()
+            .frame(maxWidth: .infinity)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
+
         if !auth.isDriver {
             NavigationLink {
                 PlowTimesView()
