@@ -8,6 +8,7 @@ struct MapPin: Identifiable {
     let coordinate: CLLocationCoordinate2D
     let radius: Double
     let isDone: Bool
+    let isPriority: Bool
 }
 
 struct PropertyMapView: View {
@@ -33,7 +34,8 @@ struct PropertyMapView: View {
                 name: name.isEmpty ? "(No name)" : name,
                 coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon),
                 radius: property.radiusMeters,
-                isDone: done
+                isDone: done,
+                isPriority: property.isPriorityFlag
             )
         }
     }
@@ -45,9 +47,9 @@ struct PropertyMapView: View {
 
                 ForEach(pins) { pin in
                     Annotation(pin.name, coordinate: pin.coordinate) {
-                        Image(systemName: pin.isDone ? "checkmark.circle.fill" : "mappin.circle.fill")
+                        Image(systemName: pin.isDone ? "checkmark.circle.fill" : (pin.isPriority ? "star.circle.fill" : "mappin.circle.fill"))
                             .font(.title)
-                            .foregroundStyle(pin.isDone ? Color.green : Color.red)
+                            .foregroundStyle(pin.isDone ? Color.green : (pin.isPriority ? Color.orange : Color.red))
                     }
                     MapCircle(center: pin.coordinate, radius: pin.radius)
                         .foregroundStyle(Color.blue.opacity(0.25))
