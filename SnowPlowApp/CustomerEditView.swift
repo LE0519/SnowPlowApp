@@ -59,6 +59,14 @@ struct PropertyRow: View {
                 in: 50...500,
                 step: 25
             )
+
+            PriorityEditor(
+                isPriority: Binding(
+                    get: { property.isPriority ?? false },
+                    set: { property.isPriority = $0 }
+                ),
+                deadlineMinutes: $property.deadlineMinutes
+            )
         }
         .padding(.vertical, 4)
     }
