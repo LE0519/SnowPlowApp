@@ -12,7 +12,7 @@ struct SnowPlowMain: App {
         let container: ModelContainer
         do {
             container = try ModelContainer(
-                for: Customer.self, Property.self, Storm.self, ServiceRecord.self
+                for: Customer.self, Property.self, Storm.self, ServiceRecord.self, Shift.self
             )
         } catch {
             fatalError("Could not open the SnowPlow database: \(error)")
@@ -21,6 +21,9 @@ struct SnowPlowMain: App {
 
         // These are set up here, not on a screen, so they also work when iOS restarts
         // the app in the background during a storm.
+        // Firebase is started first so the signed-in person is known right away.
+        _ = FirebaseSetup.configureIfPossible()
+
         let context = container.mainContext
         DataMaintenance.assignMissingIDs(in: context)
 
