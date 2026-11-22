@@ -18,6 +18,11 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         authorization == .denied || authorization == .restricted
     }
 
+    /// The phone's last known position, if location is allowed.
+    var currentCoordinate: CLLocationCoordinate2D? {
+        manager.location?.coordinate
+    }
+
     private let manager = CLLocationManager()
     private var context: ModelContext?
     private var lastLocation: CLLocation?
