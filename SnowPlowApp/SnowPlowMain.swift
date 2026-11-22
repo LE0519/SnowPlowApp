@@ -6,6 +6,7 @@ struct SnowPlowMain: App {
     private let container: ModelContainer
     @State private var locationService: LocationService
     @State private var syncService: SyncService
+    @State private var authService: AuthService
 
     init() {
         let container: ModelContainer
@@ -29,8 +30,13 @@ struct SnowPlowMain: App {
         let sync = SyncService()
         sync.configure(context: context)
 
+        let auth = AuthService()
+        auth.attach(context: context, sync: sync, location: location)
+        auth.bootstrap()
+
         _locationService = State(initialValue: location)
         _syncService = State(initialValue: sync)
+        _authService = State(initialValue: auth)
     }
 
     var body: some Scene {
@@ -38,6 +44,7 @@ struct SnowPlowMain: App {
             ContentView()
                 .environment(locationService)
                 .environment(syncService)
+                .environment(authService)
         }
         .modelContainer(container)
     }
