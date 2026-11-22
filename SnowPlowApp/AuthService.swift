@@ -17,6 +17,9 @@ enum DataWipe {
         for record in (try? context.fetch(FetchDescriptor<ServiceRecord>())) ?? [] {
             context.delete(record)
         }
+        for shift in (try? context.fetch(FetchDescriptor<Shift>())) ?? [] {
+            context.delete(shift)
+        }
         for storm in (try? context.fetch(FetchDescriptor<Storm>())) ?? [] {
             context.delete(storm)
         }
