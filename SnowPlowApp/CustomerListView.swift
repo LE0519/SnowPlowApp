@@ -4,7 +4,7 @@ import SwiftData
 struct CustomerListView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Customer.name) private var customers: [Customer]
-    @State private var newCustomer: Customer?
+    @State private var showingNewCustomer = false
 
     var body: some View {
         NavigationStack {
@@ -14,9 +14,9 @@ struct CustomerListView: View {
                         CustomerEditView(customer: customer)
                     } label: {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(customer.name.isEmpty ? "(No name)" : customer.name)
+                            Text(title(for: customer))
                                 .font(.headline)
-                            Text(propertyCountText(for: customer))
+                            Text(subtitle(for: customer))
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
@@ -37,28 +37,36 @@ struct CustomerListView: View {
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
-                        addCustomer()
+                        showingNewCustomer = true
                     } label: {
                         Image(systemName: "plus")
                     }
                 }
             }
-            .navigationDestination(item: $newCustomer) { customer in
-                CustomerEditView(customer: customer)
+            .sheet(isPresented: $showingNewCustomer) {
+                NewCustomerView()
             }
             .onAppear(perform: removeEmptyCustomers)
         }
     }
 
-    private func propertyCountText(for customer: Customer) -> String {
-        let count = customer.properties.count
-        return count == 1 ? "1 property" : "\(count) properties"
+    private func title(for customer: Customer) -> String {
+        if !customer.name.isEmpty {
+            return customer.name
+        }
+        if let first = customer.properties.first, !first.address.isEmpty {
+            return first.address
+        }
+        return "(No name)"
     }
 
-    private func addCustomer() {
-        let customer = Customer()
-        modelContext.insert(customer)
-        newCustomer = customer
+    private func subtitle(for customer: Customer) -> String {
+        let count = customer.properties.count
+        var text = count == 1 ? "1 property" : "\(count) properties"
+        if !customer.name.isEmpty, let first = customer.properties.first, !first.address.isEmpty {
+            text += " \u{2022} " + first.address
+        }
+        return text
     }
 
     private func deleteCustomers(at offsets: IndexSet) {
@@ -67,7 +75,7 @@ struct CustomerListView: View {
         }
     }
 
-    // Cleans up customers that were created with + but never given a name.
+    // Cleans up customers that have no name and no properties.
     private func removeEmptyCustomers() {
         let empties = customers.filter {
             $0.name.trimmingCharacters(in: .whitespaces).isEmpty && $0.properties.isEmpty
