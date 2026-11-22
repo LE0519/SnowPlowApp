@@ -1,14 +1,12 @@
 import SwiftUI
 import SwiftData
-import UIKit
 
+/// The Jobs tab: every property for the current storm, with large Done buttons.
 struct StormView: View {
     @Environment(\.modelContext) private var modelContext
-    @Environment(LocationService.self) private var locationService
     @Query(sort: \Storm.startedAt, order: .reverse) private var storms: [Storm]
     @Query private var properties: [Property]
     @AppStorage("driverName") private var driverName = "Driver"
-    @AppStorage("dwellMinutes") private var dwellMinutes = 3
 
     private var activeStorm: Storm? {
         storms.first { $0.isActive }
@@ -18,27 +16,52 @@ struct StormView: View {
         storms.filter { !$0.isActive }
     }
 
-    private var sortedProperties: [Property] {
-        properties.sorted {
-            ($0.customer?.name ?? "") < ($1.customer?.name ?? "")
-        }
+    private func priorityTodo(_ storm: Storm) -> [Property] {
+        properties
+            .filter { $0.isPriorityFlag && !$0.isDone(in: storm) }
+            .sorted { first, second in
+                let a = first.deadline(for: storm) ?? Date.distantFuture
+                let b = second.deadline(for: storm) ?? Date.distantFuture
+                return a < b
+            }
+    }
+
+    private func otherProperties(_ storm: Storm) -> [Property] {
+        properties
+            .filter { !($0.isPriorityFlag && !$0.isDone(in: storm)) }
+            .sorted { $0.displayName < $1.displayName }
+    }
+
+    private func doneCount(in storm: Storm) -> Int {
+        properties.filter { $0.isDone(in: storm) }.count
     }
 
     var body: some View {
         NavigationStack {
             List {
                 if let storm = activeStorm {
-                    activeSection(storm)
+                    let todo = priorityTodo(storm)
+                    if !todo.isEmpty {
+                        Section("Priority") {
+                            ForEach(todo) { property in
+                                PriorityRow(property: property, storm: storm, driverName: driverName)
+                            }
+                        }
+                    }
+
+                    Section("\(doneCount(in: storm)) of \(properties.count) done") {
+                        if properties.isEmpty {
+                            Text("Add customers and properties first.")
+                                .foregroundStyle(.secondary)
+                        }
+                        ForEach(otherProperties(storm)) { property in
+                            StormPropertyRow(property: property, storm: storm, driverName: driverName)
+                        }
+                    }
                 } else {
                     Section {
-                        Button {
-                            startStorm()
-                        } label: {
-                            Label("Start a storm", systemImage: "snowflake")
-                                .font(.headline)
-                        }
-                    } footer: {
-                        Text("Start a storm when you begin plowing. GPS watching and completed properties are tracked for each storm.")
+                        Text("No storm is running. Start one from the Home tab.")
+                            .foregroundStyle(.secondary)
                     }
                 }
 
@@ -57,99 +80,14 @@ struct StormView: View {
                     }
                 }
             }
-            .navigationTitle("Storm")
+            .navigationTitle("Jobs")
         }
-    }
-
-    @ViewBuilder
-    private func activeSection(_ storm: Storm) -> some View {
-        Section {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(storm.name)
-                    .font(.headline)
-                HStack {
-                    Text("Storm time")
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text(storm.startedAt, style: .timer)
-                        .font(.title2.monospacedDigit())
-                        .bold()
-                }
-                Text("Started \(storm.startedAt.formatted(date: .abbreviated, time: .shortened))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text("\(doneCount(in: storm)) of \(properties.count) properties done")
-                    .font(.subheadline)
-            }
-            Button(role: .destructive) {
-                endStorm(storm)
-            } label: {
-                Label("End storm", systemImage: "stop.circle")
-            }
-        }
-
-        Section("GPS") {
-            if let name = locationService.arrivedName, let since = locationService.arrivedAt {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("At \(name)")
-                            .font(.headline)
-                        Text(locationService.arrivedIsDone
-                             ? "Already marked done"
-                             : "Checks off automatically at \(dwellMinutes):00")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Text(since, style: .timer)
-                        .font(.title2.monospacedDigit())
-                }
-            }
-            Text(locationService.statusText)
-                .font(.subheadline)
-            if locationService.isDenied {
-                Button("Open Settings") {
-                    if let url = URL(string: UIApplication.openSettingsURLString) {
-                        UIApplication.shared.open(url)
-                    }
-                }
-            }
-        }
-
-        Section("Properties") {
-            if properties.isEmpty {
-                Text("Add customers and properties first.")
-                    .foregroundStyle(.secondary)
-            }
-            ForEach(sortedProperties) { property in
-                StormPropertyRow(property: property, storm: storm, driverName: driverName)
-            }
-        }
-    }
-
-    private func doneCount(in storm: Storm) -> Int {
-        properties.filter { property in
-            storm.records.contains { $0.property === property }
-        }.count
     }
 
     private func summary(for storm: Storm) -> String {
         let propertyCount = Set(storm.records.compactMap { $0.property?.persistentModelID }).count
         let visits = storm.records.count
         return "\(propertyCount) properties, \(visits) visits"
-    }
-
-    private func startStorm() {
-        let name = "Storm " + Date().formatted(date: .abbreviated, time: .omitted)
-        modelContext.insert(Storm(name: name))
-        try? modelContext.save()
-        locationService.start()
-    }
-
-    private func endStorm(_ storm: Storm) {
-        storm.endedAt = Date()
-        try? modelContext.save()
-        locationService.stop()
     }
 
     private func deletePastStorms(at offsets: IndexSet) {
@@ -171,14 +109,6 @@ struct StormPropertyRow: View {
             .sorted { $0.completedAt > $1.completedAt }
     }
 
-    private var title: String {
-        let name = property.customer?.name ?? ""
-        if !name.isEmpty {
-            return name
-        }
-        return property.address.isEmpty ? "(No name)" : property.address
-    }
-
     private func doneText(_ latest: ServiceRecord, visits: Int) -> String {
         let time = latest.completedAt.formatted(date: .omitted, time: .shortened)
         let how = latest.isAutomatic ? "auto" : "manual"
@@ -190,13 +120,15 @@ struct StormPropertyRow: View {
     }
 
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.headline)
-                Text(property.address)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(property.displayName)
+                    .font(.title3.bold())
+                if !property.address.isEmpty && property.displayName != property.address {
+                    Text(property.address)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 if let latest = records.first {
                     Text(doneText(latest, visits: records.count))
                         .font(.caption)
@@ -205,16 +137,21 @@ struct StormPropertyRow: View {
             }
             Spacer()
             if records.isEmpty {
-                Button("Done") {
+                Button {
                     markDone()
+                } label: {
+                    Text("Done")
+                        .font(.title3.bold())
+                        .frame(minWidth: 72, minHeight: 44)
                 }
                 .buttonStyle(.borderedProminent)
             } else {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.title2)
+                    .font(.largeTitle)
                     .foregroundStyle(.green)
             }
         }
+        .padding(.vertical, 6)
         .swipeActions {
             if !records.isEmpty {
                 Button("Again") {
@@ -229,11 +166,7 @@ struct StormPropertyRow: View {
     }
 
     private func markDone() {
-        let record = ServiceRecord(driverName: driverName, isAutomatic: false)
-        modelContext.insert(record)
-        record.property = property
-        record.storm = storm
-        try? modelContext.save()
+        JobActions.markDone(property, in: storm, driver: driverName, context: modelContext)
     }
 
     private func undoLatest() {
