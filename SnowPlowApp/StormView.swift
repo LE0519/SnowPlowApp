@@ -4,6 +4,7 @@ import SwiftData
 /// The Jobs tab: every property for the current storm, with large Done buttons.
 struct StormView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(AuthService.self) private var auth
     @Query(sort: \Storm.startedAt, order: .reverse) private var storms: [Storm]
     @Query private var properties: [Property]
     @AppStorage("driverName") private var driverName = "Driver"
@@ -76,7 +77,7 @@ struct StormView: View {
                                     .foregroundStyle(.secondary)
                             }
                         }
-                        .onDelete(perform: deletePastStorms)
+                        .onDelete(perform: auth.isDriver ? nil : deletePastStorms)
                     }
                 }
             }
