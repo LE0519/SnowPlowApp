@@ -7,6 +7,7 @@ struct SettingsView: View {
     @AppStorage("dwellMinutes") private var dwellMinutes = 3
     @AppStorage("routeDefaultMinutes") private var routeDefaultMinutes = 10
     @AppStorage("routeSpeedMPH") private var routeSpeedMPH = 20
+    @AppStorage("routeWinterPercent") private var routeWinterPercent = 150
 
     var body: some View {
         NavigationStack {
@@ -47,10 +48,11 @@ struct SettingsView: View {
                 Section {
                     Stepper("Guess per property: \(routeDefaultMinutes) min", value: $routeDefaultMinutes, in: 3...60)
                     Stepper("Average driving speed: \(routeSpeedMPH) mph", value: $routeSpeedMPH, in: 10...45)
+                    Stepper("Winter slowdown: \(routeWinterPercent)%", value: $routeWinterPercent, in: 100...300, step: 10)
                 } header: {
                     Text("Route planning")
                 } footer: {
-                    Text("The planner uses these until it has learned real times from your storms. Winter driving is slow, so a lower speed is usually more realistic.")
+                    Text("The guess per property is used until the planner has learned real times from your storms. The driving speed is for the quick straight-line estimate. Winter slowdown stretches Apple's normal road drive times, since they don't know about snow. 150% means a 10 minute drive is planned as 15.")
                 }
             }
             .navigationTitle("Settings")
