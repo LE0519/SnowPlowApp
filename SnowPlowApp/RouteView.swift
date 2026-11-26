@@ -48,6 +48,7 @@ struct RouteView: View {
     @State private var roadLegs: [LegKey: RoadLeg] = [:]
     @State private var failedLegs: Set<LegKey> = []
     @State private var loadingText: String?
+    @State private var curveText = ""
 
     private let palette: [Color] = [.blue, .green, .purple, .red]
     private let colorNames = ["Blue", "Green", "Purple", "Red"]
@@ -223,6 +224,9 @@ struct RouteView: View {
             text += " and a guess of \(defaultMinutes) minutes for the rest (change this in Settings)"
         }
         text += "."
+        if !curveText.isEmpty {
+            text += " " + curveText
+        }
         return text
     }
 
@@ -427,7 +431,8 @@ struct RouteView: View {
         let reference = storm?.startedAt ?? Date()
         let cleaned = inchesText.replacingOccurrences(of: ",", with: ".")
         let inches = Double(cleaned) ?? 3
-        let fleetRate = PlowEstimator.fleetMinutesPerInch(properties)
+        let model = PlowEstimator.buildModel(properties: properties)
+        curveText = model.curve.summary
 
         var stops: [RouteStop] = []
         var learned = 0
@@ -435,10 +440,9 @@ struct RouteView: View {
             guard let lat = property.latitude, let lon = property.longitude else { continue }
             if let storm = storm, property.isDone(in: storm) { continue }
 
-            let estimate = PlowEstimator.estimate(
+            let estimate = model.estimate(
                 for: property,
                 inches: inches,
-                fleetPerInch: fleetRate,
                 defaultMinutes: Double(defaultMinutes)
             )
             if estimate.learned { learned += 1 }
