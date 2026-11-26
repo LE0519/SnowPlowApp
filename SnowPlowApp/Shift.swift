@@ -32,4 +32,15 @@ enum ShiftActions {
             }
         }
     }
+
+    /// When a storm has ended, any visit still marked in progress is finished at the storm's end time.
+    static func finishEndedStormVisits(in context: ModelContext) {
+        for record in (try? context.fetch(FetchDescriptor<ServiceRecord>())) ?? [] {
+            guard record.inProgress == true, let storm = record.storm, let stormEnd = storm.endedAt else { continue }
+            let finish = max(stormEnd, record.arrivedAt ?? stormEnd)
+            record.inProgress = false
+            record.departedAt = record.departedAt ?? finish
+            record.completedAt = finish
+        }
+    }
 }
