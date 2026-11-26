@@ -13,6 +13,7 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
     var arrivedName: String?
     var arrivedAt: Date?
     var arrivedIsDone = false
+    var arrivedInProgress = false
 
     var isDenied: Bool {
         authorization == .denied || authorization == .restricted
@@ -75,6 +76,10 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
     }
 
     func stop() {
+        // Anyone clocking out or stopping GPS while at a property has finished that visit.
+        if let storm = activeStorm() {
+            finishVisits(except: nil, at: Date(), storm: storm)
+        }
         isTracking = false
         manager.stopUpdatingLocation()
         manager.stopMonitoringSignificantLocationChanges()
@@ -87,6 +92,7 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         arrivedName = nil
         arrivedAt = nil
         arrivedIsDone = false
+        arrivedInProgress = false
         statusText = "GPS is off."
     }
 
@@ -280,21 +286,17 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         statusText = full
     }
 
-    /// When we leave a property (or drive straight to another one), note when that visit ended.
-    /// These arrival and departure times are what the app learns plow times from.
-    private func recordDepartures(keeping keepID: PersistentIdentifier?, at time: Date,
-                                  storm: Storm, properties: [Property]) {
+    /// A visit is finished, and the property checked off, once we have left it.
+    /// This also finishes a visit that was left open if the app was closed while we drove away.
+    private func finishVisits(except keepID: PersistentIdentifier?, at time: Date, storm: Storm) {
+        let driver = UserDefaults.standard.string(forKey: "driverName") ?? "Driver"
         var changed = false
-        for (id, _) in enteredAt where id != keepID {
-            guard let property = properties.first(where: { $0.persistentModelID == id }) else { continue }
-            let latest = storm.records
-                .filter { $0.property === property && $0.isAutomatic && $0.arrivedAt != nil && $0.departedAt == nil }
-                .sorted { $0.completedAt > $1.completedAt }
-                .first
-            if let record = latest {
-                record.departedAt = time
-                changed = true
-            }
+        for record in storm.records where record.inProgress == true && record.isAutomatic && record.driverName == driver {
+            if let keepID = keepID, record.property?.persistentModelID == keepID { continue }
+            record.inProgress = false
+            record.departedAt = time
+            record.completedAt = time
+            changed = true
         }
         if changed {
             try? context?.save()
@@ -336,17 +338,18 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         }
 
         guard let property = best else {
-            recordDepartures(keeping: nil, at: location.timestamp, storm: storm, properties: properties)
+            finishVisits(except: nil, at: location.timestamp, storm: storm)
             enteredAt = [:]
             arrivedName = nil
             arrivedAt = nil
             arrivedIsDone = false
+            arrivedInProgress = false
             setStatus("Watching for arrivals. Not at a saved property.")
             return
         }
 
         let id = property.persistentModelID
-        recordDepartures(keeping: id, at: location.timestamp, storm: storm, properties: properties)
+        finishVisits(except: id, at: location.timestamp, storm: storm)
         enteredAt = enteredAt.filter { $0.key == id }
         if enteredAt[id] == nil {
             enteredAt[id] = Date()
@@ -358,26 +361,38 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         arrivedName = name
         arrivedAt = enteredAt[id]
 
-        // Never auto-complete the same property twice in one storm.
-        if storm.records.contains(where: { $0.property === property }) {
-            arrivedIsDone = true
-            setStatus("At \(name): already marked done.")
+        // Only one automatic visit per property per storm.
+        let related = storm.records.filter { $0.property === property }
+        if !related.isEmpty {
+            if let open = related.first(where: { !$0.isFinished }) {
+                arrivedIsDone = false
+                arrivedInProgress = true
+                if let arrived = open.arrivedAt { arrivedAt = arrived }
+                setStatus("In progress at \(name). It will be checked off when you leave.")
+            } else {
+                arrivedIsDone = true
+                arrivedInProgress = false
+                setStatus("At \(name): already marked done.")
+            }
             return
         }
         arrivedIsDone = false
+        arrivedInProgress = false
 
         let elapsed = Date().timeIntervalSince(enteredAt[id] ?? Date())
         if elapsed >= dwellSeconds {
             let driver = UserDefaults.standard.string(forKey: "driverName") ?? "Driver"
             let record = ServiceRecord(driverName: driver, isAutomatic: true)
+            record.inProgress = true
             context.insert(record)
             record.arrivedAt = enteredAt[id]
             record.property = property
             record.storm = storm
             try? context.save()
-            arrivedIsDone = true
+            arrivedIsDone = false
+            arrivedInProgress = true
             refreshRegions(around: location)
-            setStatus("Marked \(name) done.")
+            setStatus("In progress at \(name). It will be checked off when you leave.")
         } else {
             setStatus("At \(name).")
         }
