@@ -153,6 +153,7 @@ final class SyncService {
 
         resolveLinks(context: context)
         ShiftActions.closeEndedStormShifts(in: context)
+        ShiftActions.finishEndedStormVisits(in: context)
         try? context.save()
 
         firstSnapshotDone.insert(name)
@@ -312,6 +313,7 @@ final class SyncService {
             }
             record.arrivedAt = (change.data["arrivedAt"] as? Timestamp)?.dateValue()
             record.departedAt = (change.data["departedAt"] as? Timestamp)?.dateValue()
+            record.inProgress = (change.data["inProgress"] as? Bool) == true ? true : nil
             let propertyID = UUID(uuidString: change.data["propertyID"] as? String ?? "")
             let stormID = UUID(uuidString: change.data["stormID"] as? String ?? "")
             pendingRecordLinks[change.id] = RecordLink(propertyID: propertyID, stormID: stormID)
@@ -497,6 +499,7 @@ final class SyncService {
             if let stormID = record.storm?.uuid { data["stormID"] = stormID.uuidString }
             if let arrived = record.arrivedAt { data["arrivedAt"] = Timestamp(date: arrived) }
             if let departed = record.departedAt { data["departedAt"] = Timestamp(date: departed) }
+            if record.inProgress == true { data["inProgress"] = true }
             send("records", record.id, data)
         }
 
@@ -556,7 +559,7 @@ final class SyncService {
             } else if let string = value as? String {
                 text = string
             } else if let number = value as? NSNumber {
-                if key == "isAutomatic" || key == "isPriority" {
+                if key == "isAutomatic" || key == "isPriority" || key == "inProgress" {
                     text = number.boolValue ? "true" : "false"
                 } else {
                     text = String(format: "%.7f", number.doubleValue)
