@@ -9,6 +9,13 @@ final class ServiceRecord {
     var isAutomatic: Bool
     var arrivedAt: Date?
     var departedAt: Date?
+    var inProgress: Bool?
+
+    /// False while an automatic visit is still going on. It becomes true when the driver leaves,
+    /// or right away for a job checked off by hand.
+    var isFinished: Bool {
+        !(inProgress ?? false)
+    }
     var storm: Storm?
     var property: Property?
 
