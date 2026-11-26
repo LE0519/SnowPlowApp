@@ -84,46 +84,22 @@ struct PlowTimesView: View {
 
     private let stormsNeeded = 3
 
-    private struct Sample {
-        let minutes: Double
-        let inches: Double?
-        let stormID: PersistentIdentifier?
-    }
-
-    /// Only visits with both an arrival and a departure time count. Very short and very long
-    /// visits are ignored, since they are usually GPS glitches or a stop for something else.
-    private func samples(for property: Property) -> [Sample] {
-        property.records.compactMap { record in
-            guard let arrived = record.arrivedAt, let departed = record.departedAt else { return nil }
-            let minutes = departed.timeIntervalSince(arrived) / 60
-            guard minutes >= 1, minutes <= 180 else { return nil }
-            return Sample(
-                minutes: minutes,
-                inches: record.storm?.snowInches,
-                stormID: record.storm?.persistentModelID
-            )
-        }
-    }
-
-    private func median(_ values: [Double]) -> Double? {
-        guard !values.isEmpty else { return nil }
-        let sorted = values.sorted()
-        let middle = sorted.count / 2
-        if sorted.count % 2 == 1 {
-            return sorted[middle]
-        }
-        return (sorted[middle - 1] + sorted[middle]) / 2
-    }
-
-    private var allSamples: [Sample] {
-        properties.flatMap { samples(for: $0) }
-    }
-
     private var stormsWithData: Int {
-        let ids = allSamples
-            .filter { ($0.inches ?? 0) > 0 }
-            .compactMap { $0.stormID }
+        var ids: [PersistentIdentifier] = []
+        for property in properties {
+            for record in property.records {
+                if record.arrivedAt != nil, record.departedAt != nil,
+                   (record.storm?.snowInches ?? 0) > 0,
+                   let id = record.storm?.persistentModelID {
+                    ids.append(id)
+                }
+            }
+        }
         return Set(ids).count
+    }
+
+    private var timedVisits: Int {
+        properties.reduce(0) { $0 + PlowEstimator.samples(for: $1).count }
     }
 
     private var sortedProperties: [Property] {
@@ -131,6 +107,7 @@ struct PlowTimesView: View {
     }
 
     var body: some View {
+        let model = PlowEstimator.buildModel(properties: properties)
         List {
             Section {
                 VStack(alignment: .leading, spacing: 8) {
@@ -139,13 +116,22 @@ struct PlowTimesView: View {
                     ProgressView(value: Double(min(stormsWithData, stormsNeeded)), total: Double(stormsNeeded))
                     Text("\(stormsWithData) of \(stormsNeeded) storms with plow times and snowfall recorded.")
                         .font(.subheadline)
-                    Text("\(allSamples.count) timed visits so far.")
+                    Text("\(timedVisits) timed visits so far.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 4)
             } footer: {
-                Text("A visit is timed from when the phone enters a property's circle until it leaves. Only automatic check-offs are timed. Enter the snowfall when you end each storm. After about \(stormsNeeded) storms there is enough to start suggesting routes.")
+                Text("A visit is timed from when the phone enters a property's circle until it leaves. Only automatic visits are timed. Enter the snowfall when you end each storm.")
+            }
+
+            Section {
+                Text(model.curve.summary)
+                    .font(.subheadline)
+            } header: {
+                Text("Storm size")
+            } footer: {
+                Text("You can change the light-snow limit and the extra time per inch in Settings, under Route planning.")
             }
 
             Section("By property") {
@@ -154,7 +140,7 @@ struct PlowTimesView: View {
                         .foregroundStyle(.secondary)
                 }
                 ForEach(sortedProperties) { property in
-                    row(for: property)
+                    row(for: property, model: model)
                 }
             }
         }
@@ -162,23 +148,20 @@ struct PlowTimesView: View {
     }
 
     @ViewBuilder
-    private func row(for property: Property) -> some View {
-        let list = samples(for: property)
+    private func row(for property: Property, model: PlowModel) -> some View {
+        let count = PlowEstimator.samples(for: property).count
         VStack(alignment: .leading, spacing: 3) {
             Text(property.displayName)
                 .font(.headline)
-            if let typical = median(list.map { $0.minutes }) {
-                Text("\(list.count) timed \(list.count == 1 ? "visit" : "visits"), typically \(Int(typical.rounded())) min")
+            if let base = model.lightSnowMinutes(for: property) {
+                Text("\(count) timed \(count == 1 ? "visit" : "visits"), about \(Int(base.rounded())) min in light snow")
                     .font(.subheadline)
-                let perInch = list.compactMap { sample -> Double? in
-                    guard let inches = sample.inches, inches >= 0.5 else { return nil }
-                    return sample.minutes / inches
-                }
-                if let value = median(perInch) {
-                    Text("About \(value.formatted(.number.precision(.fractionLength(1)))) min per inch of snow")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                let small = Int(model.estimate(for: property, inches: 1, defaultMinutes: 10).minutes.rounded())
+                let medium = Int(model.estimate(for: property, inches: 4, defaultMinutes: 10).minutes.rounded())
+                let large = Int(model.estimate(for: property, inches: 8, defaultMinutes: 10).minutes.rounded())
+                Text("Estimate: 1 in \(small) min, 4 in \(medium) min, 8 in \(large) min")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             } else {
                 Text("No timed visits yet")
                     .font(.subheadline)
