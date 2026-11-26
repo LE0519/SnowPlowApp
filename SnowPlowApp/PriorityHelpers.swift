@@ -35,12 +35,25 @@ extension Property {
     }
 
     func isDone(in storm: Storm) -> Bool {
-        storm.records.contains { $0.property === self }
+        storm.records.contains { $0.property === self && $0.isFinished }
+    }
+
+    func isInProgress(in storm: Storm) -> Bool {
+        storm.records.contains { $0.property === self && !$0.isFinished }
     }
 }
 
 enum JobActions {
     static func markDone(_ property: Property, in storm: Storm, driver: String, context: ModelContext) {
+        // If an automatic visit is still in progress here, finishing it is the same as marking it done.
+        if let open = storm.records.first(where: { $0.property === property && !$0.isFinished }) {
+            let now = Date()
+            open.inProgress = false
+            open.completedAt = now
+            open.departedAt = now
+            try? context.save()
+            return
+        }
         let record = ServiceRecord(driverName: driver, isAutomatic: false)
         context.insert(record)
         record.property = property
@@ -124,6 +137,11 @@ struct PriorityRow: View {
                     Text(property.address)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+                if property.isInProgress(in: storm) {
+                    Text("In progress")
+                        .font(.caption.bold())
+                        .foregroundStyle(.blue)
                 }
                 if let deadline = property.deadline(for: storm) {
                     TimelineView(.periodic(from: .now, by: 30)) { timeline in
