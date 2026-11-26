@@ -121,6 +121,14 @@ struct StormPropertyRow: View {
             .sorted { $0.completedAt > $1.completedAt }
     }
 
+    private var finished: [ServiceRecord] {
+        records.filter { $0.isFinished }
+    }
+
+    private var openVisit: ServiceRecord? {
+        records.first { !$0.isFinished }
+    }
+
     private func doneText(_ latest: ServiceRecord, visits: Int) -> String {
         let time = latest.completedAt.formatted(date: .omitted, time: .shortened)
         let how = latest.isAutomatic ? "auto" : "manual"
@@ -141,14 +149,28 @@ struct StormPropertyRow: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                if let latest = records.first {
-                    Text(doneText(latest, visits: records.count))
+                if let open = openVisit {
+                    Text("In progress since \((open.arrivedAt ?? open.completedAt).formatted(date: .omitted, time: .shortened)). Done when you leave.")
+                        .font(.caption)
+                        .foregroundStyle(.blue)
+                } else if let latest = finished.first {
+                    Text(doneText(latest, visits: finished.count))
                         .font(.caption)
                         .foregroundStyle(.green)
                 }
             }
             Spacer()
-            if records.isEmpty {
+            if openVisit != nil {
+                Button {
+                    markDone()
+                } label: {
+                    Text("Finish")
+                        .font(.title3.bold())
+                        .frame(minWidth: 72, minHeight: 44)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.blue)
+            } else if finished.isEmpty {
                 Button {
                     markDone()
                 } label: {
@@ -165,7 +187,11 @@ struct StormPropertyRow: View {
         }
         .padding(.vertical, 6)
         .swipeActions {
-            if !records.isEmpty {
+            if openVisit != nil {
+                Button("Undo", role: .destructive) {
+                    undoLatest()
+                }
+            } else if !finished.isEmpty {
                 Button("Again") {
                     markDone()
                 }
