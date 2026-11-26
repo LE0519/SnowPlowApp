@@ -19,11 +19,15 @@ struct StormDetailView: View {
     }
 
     private var recordsByTime: [ServiceRecord] {
-        storm.records.sorted { $0.completedAt < $1.completedAt }
+        storm.records.filter { $0.isFinished }.sorted { $0.completedAt < $1.completedAt }
+    }
+
+    private var openVisits: [ServiceRecord] {
+        storm.records.filter { !$0.isFinished }
     }
 
     private var doneIDs: Set<PersistentIdentifier> {
-        Set(storm.records.compactMap { $0.property?.persistentModelID })
+        Set(storm.records.filter { $0.isFinished }.compactMap { $0.property?.persistentModelID })
     }
 
     private var doneCount: Int {
@@ -94,7 +98,7 @@ struct StormDetailView: View {
         properties.compactMap { property in
             guard let due = property.deadline(for: storm) else { return nil }
             let doneAt = storm.records
-                .filter { $0.property === property }
+                .filter { $0.property === property && $0.isFinished }
                 .map { $0.completedAt }
                 .min()
             return PriorityResult(id: property.persistentModelID, name: property.displayName, due: due, doneAt: doneAt)
@@ -231,6 +235,20 @@ struct StormDetailView: View {
                 } header: {
                     let onTime = priorityResults.filter { $0.onTime }.count
                     Text("Priority deadlines: \(onTime) of \(priorityResults.count) on time")
+                }
+            }
+
+            if !openVisits.isEmpty {
+                Section("In progress") {
+                    ForEach(openVisits) { record in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(record.property?.displayName ?? "Deleted property")
+                                .font(.headline)
+                            Text("Arrived \(timeText(record.arrivedAt ?? record.completedAt)) by \(record.driverName). Checked off when they leave.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
             }
 
