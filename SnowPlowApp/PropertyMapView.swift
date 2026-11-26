@@ -9,6 +9,7 @@ struct MapPin: Identifiable {
     let radius: Double
     let isDone: Bool
     let isPriority: Bool
+    let isInProgress: Bool
 }
 
 struct PropertyMapView: View {
@@ -28,14 +29,16 @@ struct PropertyMapView: View {
                 return nil
             }
             let name = property.customer?.name ?? ""
-            let done = storm?.records.contains { $0.property === property } ?? false
+            let done = storm.map { property.isDone(in: $0) } ?? false
+            let working = storm.map { property.isInProgress(in: $0) } ?? false
             return MapPin(
                 id: property.persistentModelID,
                 name: name.isEmpty ? "(No name)" : name,
                 coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon),
                 radius: property.radiusMeters,
                 isDone: done,
-                isPriority: property.isPriorityFlag
+                isPriority: property.isPriorityFlag,
+                isInProgress: working
             )
         }
     }
@@ -47,9 +50,9 @@ struct PropertyMapView: View {
 
                 ForEach(pins) { pin in
                     Annotation(pin.name, coordinate: pin.coordinate) {
-                        Image(systemName: pin.isDone ? "checkmark.circle.fill" : (pin.isPriority ? "star.circle.fill" : "mappin.circle.fill"))
+                        Image(systemName: pin.isDone ? "checkmark.circle.fill" : (pin.isInProgress ? "clock.circle.fill" : (pin.isPriority ? "star.circle.fill" : "mappin.circle.fill")))
                             .font(.title)
-                            .foregroundStyle(pin.isDone ? Color.green : (pin.isPriority ? Color.orange : Color.red))
+                            .foregroundStyle(pin.isDone ? Color.green : (pin.isInProgress ? Color.blue : (pin.isPriority ? Color.orange : Color.red)))
                     }
                     MapCircle(center: pin.coordinate, radius: pin.radius)
                         .foregroundStyle(Color.blue.opacity(0.25))
