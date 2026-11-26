@@ -34,6 +34,53 @@ struct PlannedRoute: Identifiable {
     var serviceMinutes: Double { stops.reduce(0) { $0 + $1.stop.serviceMinutes } }
 }
 
+/// How a storm's size changes the time at each property.
+/// Light snow takes about the same time whether it is 1 inch or 2. Above a threshold,
+/// every extra inch adds a share of the property's normal time.
+struct SnowCurve {
+    let threshold: Double
+    let growth: Double
+    let isLearned: Bool
+    let observations: Int
+
+    func factor(at inches: Double) -> Double {
+        if inches <= threshold {
+            return 1
+        }
+        return 1 + growth * (inches - threshold)
+    }
+
+    var summary: String {
+        let percent = Int((growth * 100).rounded())
+        let source = isLearned
+            ? "learned from \(observations) heavy-snow visits"
+            : "a guess until there are heavier storms to learn from"
+        return "Snow up to \(threshold.formatted()) in takes about the same time at each property. Each extra inch adds about \(percent)% (\(source))."
+    }
+}
+
+struct PlowModel {
+    let curve: SnowCurve
+    let baseByProperty: [PersistentIdentifier: Double]
+    let fleetBase: Double?
+
+    /// Minutes at this property in light snow, if the app has timed it.
+    func lightSnowMinutes(for property: Property) -> Double? {
+        baseByProperty[property.persistentModelID]
+    }
+
+    func estimate(for property: Property, inches: Double, defaultMinutes: Double) -> (minutes: Double, learned: Bool) {
+        let factor = curve.factor(at: max(inches, 0))
+        if let own = baseByProperty[property.persistentModelID] {
+            return (max(2, own * factor), true)
+        }
+        if let fleet = fleetBase {
+            return (max(2, fleet * factor), false)
+        }
+        return (max(2, defaultMinutes * factor), false)
+    }
+}
+
 /// Works out how long each property is expected to take, from what the app has learned.
 enum PlowEstimator {
     struct Sample {
@@ -62,42 +109,73 @@ enum PlowEstimator {
         return (sorted[middle - 1] + sorted[middle]) / 2
     }
 
-    /// Typical minutes per inch across every property, used for properties with no history of their own.
-    static func fleetMinutesPerInch(_ properties: [Property]) -> Double? {
-        var rates: [Double] = []
+    /// Learns two things from recorded visits: how long each property takes in light snow,
+    /// and how much longer heavier storms take. Until there is enough data, the settings are used.
+    static func buildModel(properties: [Property]) -> PlowModel {
+        let defaults = UserDefaults.standard
+        let threshold = (defaults.object(forKey: "snowLightInches") as? Double) ?? 2.0
+        let defaultGrowth = Double((defaults.object(forKey: "snowExtraPercent") as? Int) ?? 12) / 100
+
+        // 1. Time in light snow, for properties that have been timed in light snow.
+        var lightBase: [PersistentIdentifier: Double] = [:]
         for property in properties {
+            var light: [Double] = []
             for sample in samples(for: property) {
-                if let inches = sample.inches, inches >= 0.5 {
-                    rates.append(sample.minutes / inches)
+                if let inches = sample.inches, inches > 0, inches <= threshold {
+                    light.append(sample.minutes)
                 }
             }
-        }
-        return median(rates)
-    }
-
-    static func estimate(for property: Property,
-                         inches: Double,
-                         fleetPerInch: Double?,
-                         defaultMinutes: Double) -> (minutes: Double, learned: Bool) {
-        let list = samples(for: property)
-
-        var perInch: [Double] = []
-        for sample in list {
-            if let sampleInches = sample.inches, sampleInches >= 0.5 {
-                perInch.append(sample.minutes / sampleInches)
+            if let base = median(light) {
+                lightBase[property.persistentModelID] = base
             }
         }
 
-        if let rate = median(perInch), inches >= 0.5 {
-            return (max(2, rate * inches), true)
+        // 2. How much longer heavy storms take, from properties timed in both light and heavy snow.
+        var growthValues: [Double] = []
+        for property in properties {
+            guard let base = lightBase[property.persistentModelID], base > 0 else { continue }
+            for sample in samples(for: property) {
+                guard let inches = sample.inches, inches > threshold else { continue }
+                let extra = sample.minutes / base - 1
+                growthValues.append(extra / (inches - threshold))
+            }
         }
-        if let typical = median(list.map { $0.minutes }) {
-            return (max(2, typical), true)
+        var growth = defaultGrowth
+        var learned = false
+        if growthValues.count >= 3, let value = median(growthValues) {
+            growth = min(max(value, 0), 0.5)
+            learned = true
         }
-        if let rate = fleetPerInch, inches >= 0.5 {
-            return (max(2, rate * inches), false)
+        let curve = SnowCurve(
+            threshold: threshold,
+            growth: growth,
+            isLearned: learned,
+            observations: growthValues.count
+        )
+
+        // 3. A light-snow time for every property that has been timed at all.
+        var base: [PersistentIdentifier: Double] = [:]
+        for property in properties {
+            let id = property.persistentModelID
+            if let known = lightBase[id] {
+                base[id] = known
+                continue
+            }
+            // Only heavy-snow visits (or visits with no snowfall recorded): scale back to light snow.
+            var scaled: [Double] = []
+            for sample in samples(for: property) {
+                if let inches = sample.inches, inches > threshold {
+                    scaled.append(sample.minutes / curve.factor(at: inches))
+                } else if sample.inches == nil {
+                    scaled.append(sample.minutes)
+                }
+            }
+            if let value = median(scaled) {
+                base[id] = value
+            }
         }
-        return (defaultMinutes, false)
+
+        return PlowModel(curve: curve, baseByProperty: base, fleetBase: median(Array(base.values)))
     }
 }
 
