@@ -165,7 +165,7 @@ struct HomeView: View {
     }
 
     private func summary(for storm: Storm) -> String {
-        let done = Set(storm.records.compactMap { $0.property?.persistentModelID }).count
+        let done = Set(storm.records.filter { $0.isFinished }.compactMap { $0.property?.persistentModelID }).count
         return "\(done) of \(properties.count) properties done"
     }
 
@@ -187,6 +187,7 @@ struct HomeView: View {
 
     private func stormCard(_ storm: Storm) -> some View {
         let done = properties.filter { $0.isDone(in: storm) }.count
+        let working = properties.filter { $0.isInProgress(in: storm) }.count
         return card {
             VStack(spacing: 8) {
                 Text("STORM IN PROGRESS")
@@ -198,6 +199,11 @@ struct HomeView: View {
                 ProgressView(value: Double(done), total: Double(max(properties.count, 1)))
                 Text("\(done) of \(properties.count) properties done")
                     .font(.headline)
+                if working > 0 {
+                    Text("\(working) in progress")
+                        .font(.subheadline)
+                        .foregroundStyle(.blue)
+                }
             }
             .frame(maxWidth: .infinity)
         }
@@ -212,7 +218,9 @@ struct HomeView: View {
                         .font(.title3.bold())
                     Text(locationService.arrivedIsDone
                          ? "Already marked done"
-                         : "Checks off automatically at \(dwellMinutes):00")
+                         : (locationService.arrivedInProgress
+                            ? "In progress. Marked done when you leave."
+                            : "Marked in progress at \(dwellMinutes):00"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -370,6 +378,11 @@ struct HomeView: View {
             let now = Date()
             storm.endedAt = now
             storm.snowInches = inches
+            for record in storm.records where record.inProgress == true {
+                record.inProgress = false
+                record.departedAt = now
+                record.completedAt = now
+            }
             // The owner clocks everyone out. A driver clocks out only themselves,
             // and the others are clocked out when they sync.
             for shift in storm.shifts where shift.endedAt == nil {
